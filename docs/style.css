@@ -162,3 +162,11 @@ h2.hi{display:flex;align-items:center;gap:12px}
 
 /* sign-in */
 .center.card{box-shadow:0 18px 50px rgba(16,24,40,.14);padding:28px}
+
+/* deleting messages */
+.thread .msg{position:relative}
+.thread .del{position:absolute;right:10px;top:2px;display:none;padding:4px 6px;border-radius:8px;background:var(--card);border:1px solid var(--line);color:var(--mut);line-height:0}
+.thread .msg:hover .del{display:block}
+.thread .del:hover{color:var(--bad);border-color:var(--bad)}
+.gone{color:var(--mut);font-style:italic}
+@media(hover:none){.thread .del{display:block;opacity:.55}}
