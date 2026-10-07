@@ -1,82 +1,112 @@
 'use strict';
-// PressGO chat: General, Urgent Jobs, department channels, private messages and job chat.
-// Uses the helpers from app.js (sb, me, esc, fmt, shell, ask, call, alert2, friendly).
+// PressGO chat, Slack-style: channels and private messages live in the left sidebar, the conversation fills the page.
+// Uses helpers from app.js (sb, me, depts, esc, shell, ask, call, alert2, friendly).
 (function () {
   const css = document.createElement('style');
   css.textContent = `
-.chat{display:grid;grid-template-columns:280px 1fr;gap:14px;min-height:60vh}
-.chat .list,.chat .thread{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
-.chat .list .head{padding:10px;border-bottom:1px solid var(--line)}
-.chat .list .items{overflow:auto;max-height:70vh}
-.chat .conv{display:block;padding:10px 12px;border-bottom:1px solid var(--line);color:inherit;text-decoration:none}
-.chat .conv:hover,.chat .conv.on{background:color-mix(in srgb,var(--brand) 10%,transparent)}
-.chat .conv .t{display:flex;justify-content:space-between;gap:8px;font-weight:600}
-.chat .conv .p{color:var(--mut);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.chat .dot{background:var(--brand);color:#fff;border-radius:99px;font-size:12px;padding:0 7px;min-width:20px;text-align:center}
-.chat .th-head{padding:10px 14px;border-bottom:1px solid var(--line);font-weight:600}
-.chat .msgs{flex:1;overflow:auto;padding:12px 14px;max-height:60vh;min-height:40vh}
-.chat .m{margin-bottom:10px;max-width:80%}
-.chat .m .by{font-size:12px;color:var(--mut)}
-.chat .m .b{white-space:pre-wrap;word-wrap:break-word;background:color-mix(in srgb,var(--mut) 14%,transparent);padding:7px 11px;border-radius:12px;display:inline-block}
-.chat .m.mine{margin-left:auto;text-align:right}
-.chat .m.mine .b{background:color-mix(in srgb,var(--brand) 22%,transparent);text-align:left}
-.chat form.send{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}
-.chat form.send textarea{resize:none;height:44px}
-.chat .empty{padding:30px;color:var(--mut);text-align:center}
-@media(max-width:700px){.chat{grid-template-columns:1fr}.chat.open .list{display:none}.chat:not(.open) .thread{display:none}}
+.thread{flex:1;min-width:0;display:flex;flex-direction:column;height:100%;background:var(--bg)}
+.thread .th-head{padding:12px 20px;border-bottom:1px solid var(--line);background:var(--card)}
+.thread .ttl{font-weight:700;font-size:17px}.thread .sub{color:var(--mut);font-size:13px}
+.thread .msgs{flex:1;overflow:auto;padding:10px 20px 6px}
+.thread .day{display:flex;align-items:center;gap:10px;margin:14px 0 8px;color:var(--mut);font-size:12px}
+.thread .day:before,.thread .day:after{content:"";flex:1;border-top:1px solid var(--line)}
+.thread .msg{display:flex;gap:10px;padding:3px 6px;border-radius:8px;margin-top:8px}
+.thread .msg.cont{margin-top:0}
+.thread .msg:hover{background:color-mix(in srgb,var(--mut) 9%,transparent)}
+.thread .av{flex:none;width:36px;height:36px;border-radius:8px;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}
+.thread .gut{flex:none;width:36px;text-align:right;color:transparent;font-size:11px;padding-top:3px}
+.thread .msg.cont:hover .gut{color:var(--mut)}
+.thread .hd{line-height:1.2}.thread .hd .tm{color:var(--mut);font-size:12px;margin-left:6px}
+.thread .bd{white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
+.thread .msg.mine .hd b{color:var(--brand)}
+.thread form.send{display:flex;gap:8px;align-items:flex-end;padding:10px 16px 14px;background:var(--bg)}
+.thread form.send textarea{resize:none;height:44px;max-height:140px;border-radius:12px;padding:11px 14px;background:var(--card)}
+.thread form.send button{height:44px;border-radius:12px}
+.thread .empty{margin:auto;text-align:center;color:var(--mut);padding:30px}
+.thread .empty h3{color:var(--ink);margin:0 0 6px}
 `;
   document.head.appendChild(css);
 
-  let channel = null, timer = null, current = null, badgeTimer = null;
+  let timer = null, sideTimer = null, rt = null, current = null, convs = [];
+
+  const color = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 50% 42%)`; };
+  const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+  const avatar = (n) => `<span class="av" style="background:${color(n)}">${esc(initials(n))}</span>`;
+  const timeOf = (d) => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const dayLabel = (d) => {
+    const t = new Date(d), n = new Date(), y = new Date(); y.setDate(n.getDate() - 1);
+    return t.toDateString() === n.toDateString() ? 'Today' : t.toDateString() === y.toDateString() ? 'Yesterday'
+      : t.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+  };
 
   window.chatLeave = function () {
-    if (channel) { sb.removeChannel(channel); channel = null; }
     if (timer) { clearInterval(timer); timer = null; }
     current = null;
   };
-
-  window.chatBadge = async function () {
-    const el = document.getElementById('chatlink');
-    if (!el || !me) return;
-    const { data } = await sb.rpc('my_conversations');
-    const n = (data || []).reduce((a, c) => a + Number(c.unread || 0), 0);
-    el.textContent = n ? `Chat (${n})` : 'Chat';
-    if (!badgeTimer) badgeTimer = setInterval(() => { if (me) window.chatBadge(); }, 30000);
-  };
-
-  const preview = (c) => (c.last_body ? `${c.last_author === me.display_name ? 'You' : c.last_author}: ${c.last_body}` : 'No messages yet');
-  const kind = (c) => (c.type === 'department' ? '# ' : c.type === 'direct' ? '' : c.type === 'job' ? '' : '# ');
 
   async function loadList() {
     const { data, error } = await sb.rpc('my_conversations');
     if (error) throw error;
     return data || [];
   }
-  function renderList(list) {
-    const box = document.getElementById('convs');
-    if (!box) return;
-    box.innerHTML = list.map((c) => `<a class="conv ${c.id === current ? 'on' : ''}" href="#/chat/${c.id}">
-      <div class="t"><span>${esc(kind(c) + (c.name || ''))}</span>${Number(c.unread) ? `<span class="dot">${c.unread}</span>` : ''}</div>
-      <div class="p">${esc(preview(c))}</div></a>`).join('') || '<div class="empty">No chats yet.</div>';
-  }
 
-  async function loadThread(conv, list) {
+  // ---------------------------------------------------------------- sidebar (channels + private messages)
+  function renderSide() {
+    const box = document.getElementById('sidechats');
+    if (!box) return;
+    const item = (c, pre) => `<a class="nav ch ${c.id === current ? 'on' : ''} ${Number(c.unread) ? 'unread' : ''}" href="#/chat/${c.id}"><span class="nm">${pre}${esc(c.name || '')}</span>${Number(c.unread) ? `<span class="dot">${c.unread}</span>` : ''}</a>`;
+    const chans = convs.filter((c) => ['general', 'urgent', 'department'].includes(c.type));
+    const jobs = convs.filter((c) => c.type === 'job').slice(0, 8);
+    const dms = convs.filter((c) => c.type === 'direct');
+    box.innerHTML = `<h4>Channels</h4>${chans.map((c) => item(c, '# ')).join('') || '<div class="note" style="padding:4px 10px">Loading…</div>'}
+      ${jobs.length ? `<h4>Job chats</h4>${jobs.map((c) => item(c, '')).join('')}` : ''}
+      <h4>Direct messages <button id="sidenew" title="New private message">+</button></h4>
+      ${dms.map((c) => item(c, '')).join('') || '<div class="note" style="padding:4px 10px">No private messages yet.</div>'}`;
+    box.querySelector('#sidenew').onclick = newDirect;
+  }
+  function ensureRealtime() {
+    if (rt) return;
+    rt = sb.channel('chat-all').on('postgres_changes', { event: 'INSERT', schema: 'pressgo', table: 'messages' }, (p) => {
+      if (p.new.conversation_id === current) loadThread(current); else window.chatSidebar();
+    }).subscribe();
+  }
+  window.chatSidebar = async function () {
+    if (!me) return;
+    renderSide();
+    try { convs = await loadList(); renderSide(); } catch (e) { /* keep what we have */ }
+    ensureRealtime();
+    if (!sideTimer) sideTimer = setInterval(() => { if (me) window.chatSidebar(); }, 30000);
+  };
+  window.chatBadge = window.chatSidebar;
+
+  // ---------------------------------------------------------------- conversation
+  async function loadThread(conv) {
     const { data, error } = await sb.from('messages')
       .select('id,body,sent_at,author_id,author:author_id(display_name)')
       .eq('conversation_id', conv).order('sent_at', { ascending: false }).limit(200);
     const box = document.getElementById('msgs');
-    if (!box) return;
+    if (!box || current !== conv) return;
     if (error) { box.innerHTML = `<div class="err">${esc(friendly(error))}</div>`; return; }
     const msgs = (data || []).reverse();
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-    box.innerHTML = msgs.map((m) => `<div class="m ${m.author_id === me.id ? 'mine' : ''}">
-      <div class="by">${m.author_id === me.id ? 'You' : esc(m.author?.display_name || '?')} · ${esc(fmt(m.sent_at))}</div><div class="b">${esc(m.body)}</div></div>`).join('')
-      || '<div class="empty">No messages yet. Say hello.</div>';
+    let lastDay = '', lastAuthor = '', lastT = 0;
+    box.innerHTML = msgs.map((m) => {
+      let h = '';
+      const day = new Date(m.sent_at).toDateString(), t = +new Date(m.sent_at);
+      if (day !== lastDay) { h += `<div class="day"><span>${esc(dayLabel(m.sent_at))}</span></div>`; lastAuthor = ''; }
+      const cont = m.author_id === lastAuthor && t - lastT < 5 * 60000;
+      lastDay = day; lastAuthor = m.author_id; lastT = t;
+      const name = m.author_id === me.id ? 'You' : (m.author?.display_name || '?');
+      h += cont
+        ? `<div class="msg cont ${m.author_id === me.id ? 'mine' : ''}"><span class="gut">${esc(timeOf(m.sent_at))}</span><div class="bd">${esc(m.body)}</div></div>`
+        : `<div class="msg ${m.author_id === me.id ? 'mine' : ''}">${avatar(name === 'You' ? me.display_name : name)}<div><div class="hd"><b>${esc(name)}</b><span class="tm">${esc(timeOf(m.sent_at))}</span></div><div class="bd">${esc(m.body)}</div></div></div>`;
+      return h;
+    }).join('') || '<div class="empty"><h3>No messages yet</h3>Say hello below.</div>';
     if (atBottom || box.dataset.first !== '1') box.scrollTop = box.scrollHeight;
     box.dataset.first = '1';
     await sb.rpc('mark_read', { p_conv: conv });
-    renderList((list || (await loadList())).map((c) => (c.id === conv ? { ...c, unread: 0 } : c)));
-    window.chatBadge();
+    convs = convs.map((c) => (c.id === conv ? { ...c, unread: 0 } : c));
+    renderSide();
   }
 
   async function newDirect() {
@@ -121,51 +151,49 @@
       if (data) { location.hash = '#/chat/' + data.id; return; }
       return shell('chat', '<div class="card"><h2>Job chat</h2><p class="note">This job\'s chat isn\'t available to you.</p><a href="#/jobs">Back to jobs</a></div>');
     }
-    shell('chat', '<p class="note">Loading…</p>');
-    let list;
-    try { list = await loadList(); } catch (e) { return shell('chat', `<div class="card err">${esc(friendly(e))}</div>`); }
-    const found = conv ? list.find((c) => c.id === conv) : null;
-    if (conv && !found) {
+    shell('chat', '');
+    let list = convs;
+    try { list = await loadList(); convs = list; } catch (e) { return shell('chat', `<div class="card err">${esc(friendly(e))}</div>`); }
+    let info = conv ? list.find((c) => c.id === conv) : null;
+    if (conv && !info) {
       // a job chat nobody has written in yet is not in the list: look it up so it can still be opened
       const { data: c } = await sb.from('conversations').select('id,type,name,job_id').eq('id', conv).maybeSingle();
       if (c) {
         let name = c.name;
         if (c.type === 'job') { const { data: j } = await sb.from('jobs').select('job_number,customer_name').eq('id', c.job_id).maybeSingle(); name = j ? `Job #${j.job_number} · ${j.customer_name}` : 'Job chat'; }
-        list = [{ ...c, name, unread: 0, last_body: null }, ...list];
+        info = { ...c, name, unread: 0 };
       } else conv = null;
     }
     current = conv;
-    const title = conv ? (list.find((c) => c.id === conv) || {}).name : '';
-    document.querySelector('main').innerHTML = `<div class="chat ${conv ? 'open' : ''}">
-      <div class="list"><div class="head"><button class="primary" id="newdm" style="width:100%">+ New private message</button></div><div class="items" id="convs"></div></div>
-      <div class="thread">${conv ? `<div class="th-head"><a href="#/chat" class="note" style="margin-right:8px">← Chats</a>${esc(title)}</div>
-        <div class="msgs" id="msgs"><p class="note">Loading…</p></div>
-        <form class="send" id="sendf"><textarea name="body" maxlength="4000" placeholder="Write a message… (Enter to send, Shift+Enter for a new line)" required></textarea><button class="primary" type="submit">Send</button></form>`
-        : '<div class="empty">Pick a chat on the left, or start a private message.</div>'}</div></div>`;
-    renderList(list);
-    document.getElementById('newdm').onclick = newDirect;
-    if (!conv) return;
-    await loadThread(conv, list);
-    const f = document.getElementById('sendf');
-    const ta = f.body;
+    renderSide();
+    document.querySelector('.content').classList.add('chatmode');
+    const main = document.querySelector('main');
+    if (!conv) {
+      main.innerHTML = `<div class="thread"><div class="empty"><h3>Messages</h3>Pick a channel or a person on the left,<br>or start a private message with the + button.<br><br><button class="primary" id="newdm">+ New private message</button></div></div>`;
+      document.getElementById('newdm').onclick = newDirect;
+      return;
+    }
+    const sub = info.type === 'direct' ? 'Private — only the people in this chat can see it'
+      : info.type === 'job' ? `<a href="#/job/${info.job_id}">Open this job</a>`
+      : info.type === 'department' ? 'Department channel — this department and managers' : 'Everyone';
+    main.innerHTML = `<div class="thread"><div class="th-head"><div class="ttl">${esc((['general', 'urgent', 'department'].includes(info.type) ? '# ' : '') + (info.name || ''))}</div><div class="sub">${sub}</div></div>
+      <div class="msgs" id="msgs"><p class="note">Loading…</p></div>
+      <form class="send" id="sendf"><textarea name="body" maxlength="4000" rows="1" placeholder="Message ${esc(info.name || '')}" required></textarea><button class="primary" type="submit">Send</button></form></div>`;
+    await loadThread(conv);
+    const f = document.getElementById('sendf'), ta = f.body;
     ta.focus();
+    ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } };
     f.onsubmit = async (e) => {
       e.preventDefault();
       const text = ta.value;
       if (!text.trim()) return;
       f.querySelector('button').disabled = true;
-      try { await call('send_message', { p_conv: conv, p_body: text }); ta.value = ''; await loadThread(conv); }
+      try { await call('send_message', { p_conv: conv, p_body: text }); ta.value = ''; ta.style.height = '44px'; await loadThread(conv); window.chatSidebar(); }
       catch (err) { alert2(friendly(err)); }
       f.querySelector('button').disabled = false;
       ta.focus();
     };
-    // live updates (instant when Realtime is on), plus a gentle refresh as a safety net
-    const refresh = async () => { if (current !== conv) return; await loadThread(conv); };
-    channel = sb.channel('chat-' + conv)
-      .on('postgres_changes', { event: 'INSERT', schema: 'pressgo', table: 'messages' }, async (p) => {
-        if (p.new.conversation_id === conv) refresh(); else { renderList(await loadList()); window.chatBadge(); }
-      }).subscribe();
-    timer = setInterval(async () => { if (current === conv) { await refresh(); } }, 8000);
+    timer = setInterval(() => { if (current === conv) loadThread(conv); }, 8000);   // safety net if live updates are off
   };
 })();
