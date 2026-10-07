@@ -80,14 +80,46 @@
   window.chatBadge = window.chatSidebar;
 
   // ---------------------------------------------------------------- conversation
+  // ---- pictures: private bucket, short-lived links, cached so the 8-second refresh does not re-sign them
+  const picUrls = {};
+  async function signPics(paths) {
+    const need = paths.filter((p) => !picUrls[p] || picUrls[p].exp < Date.now());
+    if (!need.length) return;
+    const { data } = await sb.storage.from('chat-files').createSignedUrls(need, 3600);
+    (data || []).forEach((r) => { if (r.signedUrl) picUrls[r.path] = { url: r.signedUrl, exp: Date.now() + 50 * 60000 }; });
+  }
+  // shrink big phone photos before upload (max 1600px, JPEG) so they send fast and stay under the limit
+  function shrink(file) {
+    return new Promise((resolve) => {
+      if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < 300000) return resolve(file);
+      const img = new Image(), u = URL.createObjectURL(file);
+      img.onload = () => {
+        const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(u);
+        c.toBlob((b) => resolve(b && b.size < file.size ? new File([b], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file), 'image/jpeg', 0.85);
+      };
+      img.onerror = () => { URL.revokeObjectURL(u); resolve(file); };
+      img.src = u;
+    });
+  }
+  const picHtml = (m) => {
+    const u = picUrls[m.attachment_path]?.url;
+    const cap = m.body && m.body !== 'Photo' ? `<div>${esc(m.body)}</div>` : '';
+    return (u ? `<a href="${esc(u)}" target="_blank" rel="noopener"><img class="pic" src="${esc(u)}" alt="${esc(m.attachment_name || 'photo')}" loading="lazy"></a>` : '<div class="note">Picture unavailable</div>') + cap;
+  };
+
   async function loadThread(conv) {
     const { data, error } = await sb.from('messages')
-      .select('id,body,sent_at,author_id,author:author_id(display_name)')
+      .select('id,body,sent_at,author_id,attachment_path,attachment_name,author:author_id(display_name)')
       .eq('conversation_id', conv).order('sent_at', { ascending: false }).limit(200);
     const box = document.getElementById('msgs');
     if (!box || current !== conv) return;
     if (error) { box.innerHTML = `<div class="err">${esc(friendly(error))}</div>`; return; }
     const msgs = (data || []).reverse();
+    await signPics(msgs.filter((m) => m.attachment_path).map((m) => m.attachment_path));
+    if (current !== conv) return;
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
     let lastDay = '', lastAuthor = '', lastT = 0;
     box.innerHTML = msgs.map((m) => {
@@ -98,8 +130,8 @@
       lastDay = day; lastAuthor = m.author_id; lastT = t;
       const name = m.author_id === me.id ? 'You' : (m.author?.display_name || '?');
       h += cont
-        ? `<div class="msg cont ${m.author_id === me.id ? 'mine' : ''}"><span class="gut">${esc(timeOf(m.sent_at))}</span><div class="bd">${esc(m.body)}</div></div>`
-        : `<div class="msg ${m.author_id === me.id ? 'mine' : ''}">${avatar(name === 'You' ? me.display_name : name)}<div><div class="hd"><b>${esc(name)}</b><span class="tm">${esc(timeOf(m.sent_at))}</span></div><div class="bd">${esc(m.body)}</div></div></div>`;
+        ? `<div class="msg cont ${m.author_id === me.id ? 'mine' : ''}"><span class="gut">${esc(timeOf(m.sent_at))}</span><div class="bd">${m.attachment_path ? picHtml(m) : esc(m.body)}</div></div>`
+        : `<div class="msg ${m.author_id === me.id ? 'mine' : ''}">${avatar(name === 'You' ? me.display_name : name)}<div><div class="hd"><b>${esc(name)}</b><span class="tm">${esc(timeOf(m.sent_at))}</span></div><div class="bd">${m.attachment_path ? picHtml(m) : esc(m.body)}</div></div></div>`;
       return h;
     }).join('') || '<div class="empty"><h3>No messages yet</h3>Say hello below.</div>';
     if (atBottom || box.dataset.first !== '1') box.scrollTop = box.scrollHeight;
@@ -178,20 +210,51 @@
       : info.type === 'department' ? 'Department channel — this department and managers' : 'Everyone';
     main.innerHTML = `<div class="thread"><div class="th-head"><div class="ttl">${esc((['general', 'urgent', 'department'].includes(info.type) ? '# ' : '') + (info.name || ''))}</div><div class="sub">${sub}</div></div>
       <div class="msgs" id="msgs"><p class="note">Loading…</p></div>
-      <form class="send" id="sendf"><textarea name="body" maxlength="4000" rows="1" placeholder="Message ${esc(info.name || '')}" required></textarea><button class="primary" type="submit">Send</button></form></div>`;
+      <div class="pend" id="pend" hidden></div>
+      <form class="send" id="sendf"><button type="button" class="clip" id="clip" title="Add a picture" aria-label="Add a picture"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button><input type="file" id="pic" accept="image/*" hidden><textarea name="body" maxlength="4000" rows="1" placeholder="Message ${esc(info.name || '')}"></textarea><button class="primary" type="submit">Send</button></form></div>`;
     await loadThread(conv);
     const f = document.getElementById('sendf'), ta = f.body;
     ta.focus();
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } };
+    let pending = null;
+    const pend = document.getElementById('pend'), pic = document.getElementById('pic');
+    const showPend = () => {
+      if (!pending) { pend.hidden = true; pend.innerHTML = ''; return; }
+      pend.hidden = false;
+      pend.innerHTML = `<img src="${esc(pending.preview)}" alt=""><span>${esc(pending.file.name)}</span><button type="button" id="unpic" aria-label="Remove picture">×</button>`;
+      pend.querySelector('#unpic').onclick = () => { URL.revokeObjectURL(pending.preview); pending = null; showPend(); };
+    };
+    const take = async (file) => {
+      if (!file) return;
+      if (!file.type.startsWith('image/')) { alert2('Only pictures can be sent here.'); return; }
+      const small = await shrink(file);
+      if (small.size > 10 * 1024 * 1024) { alert2('That picture is too big (10 MB at most).'); return; }
+      if (pending) URL.revokeObjectURL(pending.preview);
+      pending = { file: small, preview: URL.createObjectURL(small) };
+      showPend(); ta.focus();
+    };
+    document.getElementById('clip').onclick = () => pic.click();
+    pic.onchange = () => { take(pic.files[0]); pic.value = ''; };
+    ta.onpaste = (e) => { const it = [...(e.clipboardData?.files || [])].find((x) => x.type.startsWith('image/')); if (it) { e.preventDefault(); take(it); } };
     f.onsubmit = async (e) => {
       e.preventDefault();
       const text = ta.value;
-      if (!text.trim()) return;
-      f.querySelector('button').disabled = true;
-      try { await call('send_message', { p_conv: conv, p_body: text }); ta.value = ''; ta.style.height = '44px'; await loadThread(conv); window.chatSidebar(); }
-      catch (err) { alert2(friendly(err)); }
-      f.querySelector('button').disabled = false;
+      if (!text.trim() && !pending) return;
+      const btn = f.querySelector('button.primary'); btn.disabled = true;
+      try {
+        if (pending) {
+          const file = pending.file;
+          const safe = file.name.replace(/[^A-Za-z0-9._-]/g, '_').slice(-80) || 'photo.jpg';
+          const path = `${conv}/${crypto.randomUUID()}-${safe}`;
+          const up = await sb.storage.from('chat-files').upload(path, file, { contentType: file.type, upsert: false });
+          if (up.error) throw up.error;
+          await call('send_attachment', { p_conv: conv, p_caption: text, p_path: path, p_name: file.name, p_mime: file.type, p_size: file.size });
+          URL.revokeObjectURL(pending.preview); pending = null; showPend();
+        } else await call('send_message', { p_conv: conv, p_body: text });
+        ta.value = ''; ta.style.height = '44px'; await loadThread(conv); window.chatSidebar();
+      } catch (err) { alert2(friendly(err)); }
+      btn.disabled = false;
       ta.focus();
     };
     timer = setInterval(() => { if (current === conv) loadThread(conv); }, 8000);   // safety net if live updates are off
