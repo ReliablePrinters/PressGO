@@ -2,8 +2,7 @@
 const sb = window.supabase.createClient(PRESSGO.url, PRESSGO.key, { db: { schema: 'pressgo' } });
 const $app = document.getElementById('app');
 const dlg = document.getElementById('dlg');
-const RECOVERY = /type=recovery/.test(location.hash);   // opened from a "reset password" email
-let recoveryDone = false;
+const LOGIN_DOMAIN = 'pressgo.example.com';   // a username "jane" signs in as jane@pressgo.example.com (nothing is ever emailed there)
 let me = null;            // my employee record
 let depts = [];           // active departments
 let myDepts = new Set();  // ids of departments I belong to
@@ -24,7 +23,11 @@ function ask(title, fields, okLabel = 'OK') {
       <div class="actions" style="justify-content:flex-end"><button type="button" id="dx">Cancel</button><button class="primary" value="ok">${esc(okLabel)}</button></div></form>`;
     const f = dlg.querySelector('form');
     dlg.querySelector('#dx').onclick = () => { dlg.close(); resolve(null); };
-    f.onsubmit = () => resolve(Object.fromEntries(new FormData(f)));
+    f.onsubmit = () => {
+      const o = {};
+      for (const [k, v] of new FormData(f)) o[k] = k in o ? [].concat(o[k], v) : v;
+      resolve(o);
+    };
     dlg.onclose = () => resolve(null);
     dlg.showModal();
   });
@@ -35,11 +38,22 @@ async function call(fn, args) {
   return data;
 }
 
+function alert2(msg) { return ask('PressGO', `<p>${esc(msg)}</p>`, 'OK'); }
+async function adminCall(body) {
+  const { data, error } = await sb.functions.invoke('admin-users', { body });
+  if (error) {
+    let m = 'Could not reach the server. Please try again.';
+    try { m = (await error.context.json()).error || m; } catch (_) { /* keep default */ }
+    throw new Error(m);
+  }
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
 // ---------------------------------------------------------------- auth
 async function start() {
   const { data } = await sb.auth.getSession();
   if (!data.session) return showLogin();
-  if (RECOVERY && !recoveryDone) return showNewPassword();
   await loadMe(data.session);
 }
 async function loadMe(session) {
@@ -60,50 +74,25 @@ async function loadMe(session) {
   route();
 }
 function showLogin(msg = '') {
-  $app.innerHTML = `<div class="center card"><h2>PressGO</h2><p class="note">Staff sign-in. Your manager must invite your email address first.</p>
-    <form id="lf"><label>Email<input name="email" type="email" required autocomplete="username"></label>
-    <label>Password<input name="password" type="password" required minlength="8" autocomplete="current-password"></label>
+  $app.innerHTML = `<div class="center card"><h2>PressGO</h2><p class="note">Staff sign-in. Use the username and password your manager gave you.</p>
+    <form id="lf"><label>Username<input name="username" required autocomplete="username" autocapitalize="none" spellcheck="false"></label>
+    <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
     <div class="err" id="lerr">${esc(msg)}</div>
-    <div class="actions"><button class="primary" type="submit">Sign in</button><button type="button" id="su">Create login</button><button type="button" id="fp">Forgot password?</button></div></form>
-    <p class="note">First time? Choose “Create login”, confirm the email we send you, then sign in.</p></div>`;
+    <div class="actions"><button class="primary" type="submit">Sign in</button></div></form>
+    <p class="note">Forgot your password? Ask a manager to reset it for you.</p></div>`;
   const f = document.getElementById('lf');
   f.onsubmit = async (e) => {
     e.preventDefault();
-    const { error } = await sb.auth.signInWithPassword({ email: f.email.value.trim(), password: f.password.value });
-    if (error) return (document.getElementById('lerr').textContent = error.message);
-    start();
-  };
-  document.getElementById('fp').onclick = async () => {
-    const em = f.email.value.trim();
-    if (!em) return (document.getElementById('lerr').textContent = 'Type your email address first, then choose Forgot password.');
-    const { error } = await sb.auth.resetPasswordForEmail(em, { redirectTo: location.href.split('#')[0] });
-    document.getElementById('lerr').textContent = error ? error.message : 'If that email has a login, a reset link is on its way. Check your spam folder too.';
-  };
-  document.getElementById('su').onclick = async () => {
-    if (!f.reportValidity()) return;
-    const { error } = await sb.auth.signUp({ email: f.email.value.trim(), password: f.password.value, options: { emailRedirectTo: location.href.split('#')[0] } });
-    document.getElementById('lerr').textContent = error ? error.message : 'Check your email and click the confirmation link, then sign in.';
-  };
-}
-function showNewPassword() {
-  $app.innerHTML = `<div class="center card"><h2>Choose a new password</h2>
-    <form id="pf"><label>New password (at least 8 characters)<input name="p1" type="password" required minlength="8" autocomplete="new-password"></label>
-    <label>Type it again<input name="p2" type="password" required minlength="8" autocomplete="new-password"></label>
-    <div class="err" id="perr"></div><div class="actions"><button class="primary" type="submit">Save password</button></div></form></div>`;
-  const f = document.getElementById('pf');
-  f.onsubmit = async (e) => {
-    e.preventDefault();
-    if (f.p1.value !== f.p2.value) return (document.getElementById('perr').textContent = 'The two passwords do not match.');
-    const { error } = await sb.auth.updateUser({ password: f.p1.value });
-    if (error) return (document.getElementById('perr').textContent = error.message);
-    recoveryDone = true;
-    history.replaceState(null, '', location.pathname);
+    const u = f.username.value.trim().toLowerCase();
+    const email = u.includes('@') ? u : `${u}@${LOGIN_DOMAIN}`;
+    const { error } = await sb.auth.signInWithPassword({ email, password: f.password.value });
+    if (error) return (document.getElementById('lerr').textContent = /invalid login/i.test(error.message) ? 'Wrong username or password.' : error.message);
     start();
   };
 }
 function showBlocked(session, why) {
   $app.innerHTML = `<div class="center card"><h2>No access yet</h2><p>${esc(why)}</p>
-    <p class="note">Signed in as ${esc(session.user.email)}. Ask a manager to add this email address, then sign in again.</p>
+    <p class="note">Signed in as ${esc(session.user.email.split('@')[0])}. Ask a manager to check your account, then sign in again.</p>
     <button id="so">Sign out</button></div>`;
   document.getElementById('so').onclick = async () => { await sb.auth.signOut(); showLogin(); };
 }
@@ -111,14 +100,22 @@ function showBlocked(session, why) {
 // ---------------------------------------------------------------- shell + routing
 function shell(active, inner) {
   $app.innerHTML = `<header class="top"><h1>PressGO</h1>
-    <nav><a href="#/jobs" class="${active === 'jobs' ? 'on' : ''}">Jobs</a>${canCreate() ? `<a href="#/new" class="${active === 'new' ? 'on' : ''}">+ New job</a>` : ''}</nav>
+    <nav><a href="#/jobs" class="${active === 'jobs' ? 'on' : ''}">Jobs</a>${canCreate() ? `<a href="#/new" class="${active === 'new' ? 'on' : ''}">+ New job</a>` : ''}${me.manager_role ? `<a href="#/staff" class="${active === 'staff' ? 'on' : ''}">Staff</a>` : ''}</nav>
     <span class="me">${esc(me.display_name)}${me.manager_role ? ' · Manager' : ''}${me.front_desk ? ' · Front Desk' : ''}</span>
-    <button id="so">Sign out</button></header><main>${inner}</main>`;
+    <button id="cpw">Change password</button><button id="so">Sign out</button></header><main>${inner}</main>`;
+  document.getElementById('cpw').onclick = async () => {
+    const r = await ask('Change my password', '<label>New password (at least 8 characters)<input name="p1" type="password" required minlength="8" autocomplete="new-password"></label><label>Type it again<input name="p2" type="password" required minlength="8" autocomplete="new-password"></label>', 'Save password');
+    if (!r) return;
+    if (r.p1 !== r.p2) return alert2('The two passwords did not match. Nothing was changed.');
+    const { error } = await sb.auth.updateUser({ password: r.p1 });
+    alert2(error ? error.message : 'Your password has been changed.');
+  };
   document.getElementById('so').onclick = async () => { await sb.auth.signOut(); me = null; showLogin(); };
 }
 function route() {
   const h = location.hash || '#/jobs';
   if (h === '#/new') return canCreate() ? viewNew() : (location.hash = '#/jobs');
+  if (h === '#/staff') return me.manager_role ? viewStaff() : (location.hash = '#/jobs');
   const m = h.match(/^#\/job\/([0-9a-f-]{36})$/);
   if (m) return viewJob(m[1]);
   return viewJobs();
@@ -198,6 +195,56 @@ function viewNew() {
       });
       location.hash = '#/job/' + j.id;
     } catch (err) { document.getElementById('ne').textContent = friendly(err); b.disabled = false; }   // entered values are kept
+  };
+}
+
+// ---------------------------------------------------------------- staff (managers only)
+async function viewStaff() {
+  shell('staff', '<p class="note">Loading staff…</p>');
+  const [{ data: emps, error }, { data: mems }] = await Promise.all([
+    sb.from('employees').select('id,username,display_name,active,manager_role,front_desk,auth_user_id').order('display_name'),
+    sb.from('department_memberships').select('employee_id,department_id').is('ended_at', null)]);
+  if (error) return shell('staff', `<p class="err">${esc(friendly(error))}</p>`);
+  const deptOf = (id) => (mems || []).filter((m) => m.employee_id === id).map((m) => m.department_id);
+  const nameOf = (id) => depts.find((d) => d.id === id)?.name || '?';
+  const deptBoxes = (sel) => depts.map((d) => `<label class="inline"><input type="checkbox" name="dept" value="${d.id}" ${sel.includes(d.id) ? 'checked' : ''}> ${esc(d.name)}</label>`).join('');
+  shell('staff', `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Staff</h2><button class="primary" id="addst">+ Add staff</button></div>
+    <div class="err" id="se"></div>
+    <div class="card">${(emps || []).map((e) => `<div class="job" style="grid-template-columns:1fr auto;${e.active ? '' : 'opacity:.6'}">
+      <div><b>${esc(e.display_name)}</b> <span class="sub">username: ${esc(e.username)}</span>
+        <div>${e.manager_role ? '<span class="badge st">Manager</span>' : ''}${e.front_desk ? '<span class="badge st">Front Desk</span>' : ''}${e.active ? '' : '<span class="badge late">Disabled</span>'}${!e.auth_user_id ? '<span class="badge">No login yet</span>' : ''}</div>
+        <div class="sub">${deptOf(e.id).map(nameOf).join(', ') || 'No department'}</div></div>
+      <div class="actions" data-id="${e.id}"><button data-a="edit">Edit…</button><button data-a="pw">Reset password…</button>
+        ${e.id === me.id ? '' : `<button data-a="${e.active ? 'off' : 'on'}" class="${e.active ? 'danger' : ''}">${e.active ? 'Disable' : 'Enable'}</button>`}</div></div>`).join('')}</div>
+    <p class="note">Usernames are lower-case and cannot be changed later. A disabled person cannot sign in but their history is kept.</p>`);
+  const fail = (e) => (document.getElementById('se').textContent = friendly(e));
+  const done = () => viewStaff();
+  document.getElementById('addst').onclick = async () => {
+    const r = await ask('Add staff', `<label>Username (letters, numbers, dots, dashes)<input name="username" required minlength="3" maxlength="30" autocapitalize="none" spellcheck="false"></label>
+      <label>Name<input name="name" required maxlength="60"></label>
+      <label>Temporary password (at least 8 characters)<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+      <p class="note">Tell them their password in person. They can change it with “Change password”.</p>
+      <label class="inline"><input type="checkbox" name="mgr"> Manager</label><label class="inline"><input type="checkbox" name="fd"> Front Desk</label>
+      <div class="note">Departments</div>${deptBoxes([])}`, 'Create login');
+    if (!r) return;
+    try { await adminCall({ action: 'create', username: r.username, display_name: r.name, password: r.password, manager_role: !!r.mgr, front_desk: !!r.fd, department_ids: [].concat(r.dept || []) }); done(); } catch (e) { fail(e); }
+  };
+  document.querySelector('.card').onclick = async (ev) => {
+    const b = ev.target.closest('button[data-a]'); if (!b) return;
+    const id = b.closest('[data-id]').dataset.id; const e = emps.find((x) => x.id === id);
+    try {
+      if (b.dataset.a === 'pw') {
+        const r = await ask(`Reset password for ${e.display_name}`, '<label>New password (at least 8 characters)<input name="password" type="password" required minlength="8" autocomplete="new-password"></label><p class="note">Tell them the new password in person.</p>', 'Set password');
+        if (r) { await adminCall({ action: 'set_password', employee_id: id, password: r.password }); await alert2('Password changed.'); }
+      } else if (b.dataset.a === 'edit') {
+        const r = await ask(`Edit ${e.display_name}`, `<label>Name<input name="name" value="${esc(e.display_name)}" required maxlength="60"></label>
+          <label class="inline"><input type="checkbox" name="mgr" ${e.manager_role ? 'checked' : ''}> Manager</label><label class="inline"><input type="checkbox" name="fd" ${e.front_desk ? 'checked' : ''}> Front Desk</label>
+          <div class="note">Departments</div>${deptBoxes(deptOf(id))}`, 'Save');
+        if (r) { await adminCall({ action: 'update', employee_id: id, display_name: r.name, manager_role: !!r.mgr, front_desk: !!r.fd, department_ids: [].concat(r.dept || []) }); done(); }
+      } else if (b.dataset.a === 'off' || b.dataset.a === 'on') {
+        await adminCall({ action: 'set_active', employee_id: id, active: b.dataset.a === 'on' }); done();
+      }
+    } catch (err) { fail(err); }
   };
 }
 
