@@ -74,7 +74,7 @@ async function loadMe(session) {
   route();
 }
 function showLogin(msg = '') {
-  $app.innerHTML = `<div class="center card"><h2>PressGO</h2><p class="note">Staff sign-in. Use the username and password your manager gave you.</p>
+  $app.innerHTML = `<div class="center card"><div class="logo big">P</div><h2>PressGO</h2><p class="note">Staff sign-in. Use the username and password your manager gave you.</p>
     <form id="lf"><label>Username<input name="username" required autocomplete="username" autocapitalize="none" spellcheck="false"></label>
     <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
     <div class="err" id="lerr">${esc(msg)}</div>
@@ -102,10 +102,10 @@ function shell(active, inner) {
   const nav = (href, key, label) => `<a class="nav ${active === key ? 'on' : ''}" href="${href}">${label}</a>`;
   const roles = [me.manager_role ? 'Manager' : '', me.front_desk ? 'Front Desk' : ''].filter(Boolean).join(' · ');
   $app.innerHTML = `<div class="app" id="appbox"><div class="mobbar"><button id="burger" aria-label="Menu">☰</button><b>PressGO</b></div>
-    <aside class="side"><div class="brand">PressGO</div><div class="scroll">
+    <aside class="side"><div class="brand"><span class="logo">P</span>PressGO</div><div class="scroll">
       ${nav('#/home', 'home', 'Home')}${nav('#/jobs', 'jobs', 'Jobs')}${canCreate() ? nav('#/new', 'new', '+ New job') : ''}${nav('#/tasks', 'tasks', 'Tasks')}<a class="nav ${active === 'alerts' ? 'on' : ''}" href="#/alerts" id="alertlink">Alerts</a>${me.manager_role ? nav('#/staff', 'staff', 'Staff') : ''}
       <div id="sidechats"></div></div>
-    <div class="foot"><b>${esc(me.display_name)}</b><div class="note">${esc(roles)}</div>
+    <div class="foot"><div class="me2">${window.pgAvatar(me.display_name, 36)}<div><b>${esc(me.display_name)}</b><div class="note">${esc(roles)}</div></div></div>
       <div class="actions"><button id="cpw">Change password</button><button id="so">Sign out</button></div></div></aside>
     <div class="content"><main>${inner}</main></div></div>`;
   const box = document.getElementById('appbox');
@@ -161,7 +161,7 @@ async function viewJobs() {
       <a class="job" href="#/job/${j.id}">
         <div><div class="num">#${j.job_number}</div><span class="badge st ${isClosed(j) ? 'done' : ''}">${esc(j.lifecycle_status)}</span></div>
         <div><div><b>${esc(j.customer_name)}</b> — ${esc(j.description)} <span class="sub">×${j.quantity}</span></div>
-          <div class="sub">${esc(j.departments?.name || 'No department')} · ${j.assignee ? esc(j.assignee.display_name) : 'Unassigned'}</div></div>
+          <div class="sub">${esc(j.departments?.name || 'No department')} · ${j.assignee ? window.pgAvatar(j.assignee.display_name, 18) + ' ' + esc(j.assignee.display_name) : 'Unassigned'}</div></div>
         <div>${holdSet.has(j.id) ? '<span class="badge late">Problem</span>' : ''}${handMap.has(j.id) ? `<span class="badge st">${inDept(handMap.get(j.id)) ? 'Waiting for you to accept' : 'Handoff pending'}</span>` : ''}${j.priority === 'Rush' ? '<span class="badge rush">Rush</span>' : ''}${isLate(j) ? '<span class="badge late">Overdue</span>' : ''}<span class="sub">Due ${esc(fmt(j.due_at))}</span></div>
       </a>`).join('') : '<p class="note">No jobs match.</p>';
   };
@@ -226,9 +226,9 @@ async function viewStaff() {
   shell('staff', `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Staff</h2><button class="primary" id="addst">+ Add staff</button></div>
     <div class="err" id="se"></div>
     <div class="card">${(emps || []).map((e) => `<div class="job" style="grid-template-columns:1fr auto;${e.active ? '' : 'opacity:.6'}">
-      <div><b>${esc(e.display_name)}</b> <span class="sub">username: ${esc(e.username)}</span>
+      <div class="who">${window.pgAvatar(e.display_name, 38)}<div><b>${esc(e.display_name)}</b> <span class="sub">username: ${esc(e.username)}</span>
         <div>${e.manager_role ? '<span class="badge st">Manager</span>' : ''}${e.front_desk ? '<span class="badge st">Front Desk</span>' : ''}${e.active ? '' : '<span class="badge late">Disabled</span>'}${!e.auth_user_id ? '<span class="badge">No login yet</span>' : ''}</div>
-        <div class="sub">${deptOf(e.id).map(nameOf).join(', ') || 'No department'}</div></div>
+        <div class="sub">${deptOf(e.id).map(nameOf).join(', ') || 'No department'}</div></div></div>
       <div class="actions" data-id="${e.id}"><button data-a="edit">Edit…</button><button data-a="pw">Reset password…</button>
         ${e.id === me.id ? '' : `<button data-a="${e.active ? 'off' : 'on'}" class="${e.active ? 'danger' : ''}">${e.active ? 'Disable' : 'Enable'}</button>`}</div></div>`).join('')}</div>
     <p class="note">Usernames are lower-case and cannot be changed later. A disabled person cannot sign in but their history is kept.</p>`);
@@ -303,14 +303,14 @@ async function viewJob(id) {
       'job.problem_raised': 'reported a problem', 'job.problem_resolved': 'resolved a problem', 'job.handoff_sent': 'sent a handoff',
       'job.handoff_accepted': 'accepted a handoff', 'job.handoff_cancelled': 'cancelled a handoff' }[h.action]
       || (h.action.startsWith('job.status_') ? `changed status: ${esc(h.before?.lifecycle_status)} → <b>${esc(h.after?.lifecycle_status)}</b>` : esc(h.action));
-    return `<li><div><b>${esc(who)}</b> ${name}${h.action === 'file.uploaded' && h.after ? ` — ${esc(h.after.file_name)} (${esc(h.after.category)})` : ''}${h.action === 'job.handoff_sent' && h.after ? ` — <i>${esc(h.after.note)}</i>` : ''}${h.reason ? ` — <i>${esc(h.reason)}</i>` : ''}</div><div class="when">${esc(fmt(h.created_at))}</div></li>`;
+    return `<li><div>${window.pgAvatar(who, 20)} <b>${esc(who)}</b> ${name}${h.action === 'file.uploaded' && h.after ? ` — ${esc(h.after.file_name)} (${esc(h.after.category)})` : ''}${h.action === 'job.handoff_sent' && h.after ? ` — <i>${esc(h.after.note)}</i>` : ''}${h.reason ? ` — <i>${esc(h.reason)}</i>` : ''}</div><div class="when">${esc(fmt(h.created_at))}</div></li>`;
   }).join('') || '<li class="note">No history yet.</li>';
 
   shell('jobs', `<p><a href="#/jobs">← All jobs</a> · <a href="#/chat/job/${j.id}">Job chat</a></p>
     <div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><h2 style="margin:0">#${j.job_number} · ${esc(j.customer_name)}</h2>
       <div><span class="badge st ${isClosed(j) ? 'done' : ''}">${esc(j.lifecycle_status)}</span>${j.priority === 'Rush' ? '<span class="badge rush">Rush</span>' : ''}${isLate(j) ? '<span class="badge late">Overdue</span>' : ''}</div></div>
       <p>${esc(j.description)}</p>
-      <dl class="kv"><dt>Department</dt><dd>${esc(j.departments?.name || '—')}</dd><dt>Owner</dt><dd>${j.assignee ? esc(j.assignee.display_name) : 'Unassigned'}</dd>
+      <dl class="kv"><dt>Department</dt><dd>${esc(j.departments?.name || '—')}</dd><dt>Owner</dt><dd>${j.assignee ? window.pgAvatar(j.assignee.display_name, 22) + ' ' + esc(j.assignee.display_name) : 'Unassigned'}</dd>
         <dt>Due</dt><dd>${esc(fmt(j.due_at))}</dd><dt>Quantity</dt><dd>${j.quantity}</dd><dt>Product</dt><dd>${esc(j.product || '—')}</dd><dt>Size</dt><dd>${esc(j.size || '—')}</dd>
         <dt>Material</dt><dd>${esc(j.material || '—')}</dd><dt>Finishing</dt><dd>${esc(j.finishing || '—')}</dd><dt>Customer phone</dt><dd>${esc(j.customer_phone || '—')}</dd>
         <dt>Artwork</dt><dd>${j.artwork_required ? (approved ? 'Approved for Print: ' + esc(approved.file_name) + ' (v' + approved.version_no + ')' : 'Required — not yet approved') : 'Not required'}</dd></dl>
