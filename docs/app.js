@@ -4,6 +4,8 @@ const $app = document.getElementById('app');
 const dlg = document.getElementById('dlg');
 let me = null;            // my employee record
 let depts = [];           // active departments
+let myDepts = new Set();  // ids of departments I belong to
+const inDept = (id) => myDepts.has(id);
 const STATUSES = ['New', 'Queued', 'In Production', 'Finishing', 'Ready for Collection', 'Collected', 'Cancelled'];
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -49,6 +51,8 @@ async function loadMe(session) {
   me = emp;
   const { data: d } = await sb.from('departments').select('id,name').eq('active', true).order('name');
   depts = d || [];
+  const { data: mem } = await sb.from('department_memberships').select('department_id').eq('employee_id', emp.id).is('ended_at', null);
+  myDepts = new Set((mem || []).map((m) => m.department_id));
   window.onhashchange = route;
   route();
 }
@@ -102,6 +106,11 @@ async function viewJobs() {
     .select('id,job_number,customer_name,description,quantity,due_at,priority,lifecycle_status,current_department_id,current_assignee_id,departments:current_department_id(name),assignee:current_assignee_id(display_name)')
     .order('due_at');
   if (error) return shell('jobs', `<p class="err">${esc(friendly(error))}</p>`);
+  const [{ data: oh }, { data: ph }] = await Promise.all([
+    sb.from('job_holds').select('job_id').is('resolved_at', null),
+    sb.from('job_handoffs').select('job_id,to_department_id').eq('status', 'Pending')]);
+  const holdSet = new Set((oh || []).map((h) => h.job_id));
+  const handMap = new Map((ph || []).map((h) => [h.job_id, h.to_department_id]));
   const state = { q: '', status: 'active', dept: '', mine: false };
   const draw = () => {
     const q = state.q.toLowerCase();
@@ -116,7 +125,7 @@ async function viewJobs() {
         <div><div class="num">#${j.job_number}</div><span class="badge st ${isClosed(j) ? 'done' : ''}">${esc(j.lifecycle_status)}</span></div>
         <div><div><b>${esc(j.customer_name)}</b> — ${esc(j.description)} <span class="sub">×${j.quantity}</span></div>
           <div class="sub">${esc(j.departments?.name || 'No department')} · ${j.assignee ? esc(j.assignee.display_name) : 'Unassigned'}</div></div>
-        <div>${j.priority === 'Rush' ? '<span class="badge rush">Rush</span>' : ''}${isLate(j) ? '<span class="badge late">Overdue</span>' : ''}<span class="sub">Due ${esc(fmt(j.due_at))}</span></div>
+        <div>${holdSet.has(j.id) ? '<span class="badge late">Problem</span>' : ''}${handMap.has(j.id) ? `<span class="badge st">${inDept(handMap.get(j.id)) ? 'Waiting for you to accept' : 'Handoff pending'}</span>` : ''}${j.priority === 'Rush' ? '<span class="badge rush">Rush</span>' : ''}${isLate(j) ? '<span class="badge late">Overdue</span>' : ''}<span class="sub">Due ${esc(fmt(j.due_at))}</span></div>
       </a>`).join('') : '<p class="note">No jobs match.</p>';
   };
   shell('jobs', `<h2>Jobs</h2><div class="toolbar">
@@ -170,9 +179,12 @@ function viewNew() {
 // ---------------------------------------------------------------- job detail
 async function viewJob(id) {
   shell('jobs', '<p class="note">Loading…</p>');
-  const [{ data: j, error }, { data: hist }] = await Promise.all([
+  const [{ data: j, error }, { data: hist }, { data: files }, { data: holds }, { data: hand }] = await Promise.all([
     sb.from('jobs').select('*,departments:current_department_id(name),assignee:current_assignee_id(display_name)').eq('id', id).maybeSingle(),
-    sb.from('audit_events').select('id,action,reason,created_at,before,after,actor:actor_id(display_name)').eq('job_id', id).order('created_at', { ascending: false }).order('id', { ascending: false })
+    sb.from('audit_events').select('id,action,reason,created_at,before,after,actor:actor_id(display_name)').eq('job_id', id).order('created_at', { ascending: false }).order('id', { ascending: false }),
+    sb.from('job_files').select('id,category,file_name,size_bytes,version_no,storage_path,uploaded_at,uploader:uploaded_by(display_name)').eq('job_id', id).order('uploaded_at', { ascending: false }),
+    sb.from('job_holds').select('id,kind,note,raised_at,resolved_at,resolution_note,raiser:raised_by(display_name),resolver:resolved_by(display_name)').eq('job_id', id).order('raised_at', { ascending: false }),
+    sb.from('job_handoffs').select('id,note,status,created_at,from_department_id,to_department_id,sender:from_employee_id(display_name)').eq('job_id', id).order('created_at', { ascending: false })
   ]);
   if (error || !j) return shell('jobs', '<div class="card"><h2>You don\'t have access</h2><p class="note">This job doesn\'t exist or isn\'t available to you.</p><a href="#/jobs">Back to jobs</a></div>');
 
@@ -189,13 +201,22 @@ async function viewJob(id) {
   }
   const idx = ['New', 'Queued', 'In Production', 'Finishing', 'Ready for Collection', 'Collected'].indexOf(j.lifecycle_status);
   const blocked = j.lifecycle_status === 'Queued' && j.artwork_required && !j.approved_file_id
-    ? '<p class="note">Artwork must be uploaded and approved before this job can start (file approval arrives in the next build phase).</p>' : '';
+    ? '<p class="note">Artwork must be uploaded and approved by a manager before this job can start.</p>' : '';
+  const openHolds = (holds || []).filter((h) => !h.resolved_at);
+  const pending = (hand || []).find((h) => h.status === 'Pending');
+  const deptName = (id_) => depts.find((d) => d.id === id_)?.name || 'another department';
+  const approved = (files || []).find((f) => f.id === j.approved_file_id);
+  const newerThanApproval = approved && (files || []).some((f) => f.category !== 'Supporting Document' && f.uploaded_at > approved.uploaded_at);
+  const size = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 
   const histHtml = (hist || []).map((h) => {
     const who = h.actor?.display_name || 'System';
-    const name = { 'job.created': 'created the job', 'job.assigned': 'changed the owner or department', 'job.unassigned': 'removed the owner', 'job.details_changed': 'changed the details' }[h.action]
+    const name = { 'job.created': 'created the job', 'job.assigned': 'changed the owner or department', 'job.unassigned': 'removed the owner', 'job.details_changed': 'changed the details',
+      'file.uploaded': 'uploaded a file', 'job.artwork_approved': 'approved artwork', 'job.artwork_approval_withdrawn': 'withdrew artwork approval',
+      'job.problem_raised': 'reported a problem', 'job.problem_resolved': 'resolved a problem', 'job.handoff_sent': 'sent a handoff',
+      'job.handoff_accepted': 'accepted a handoff', 'job.handoff_cancelled': 'cancelled a handoff' }[h.action]
       || (h.action.startsWith('job.status_') ? `changed status: ${esc(h.before?.lifecycle_status)} → <b>${esc(h.after?.lifecycle_status)}</b>` : esc(h.action));
-    return `<li><div><b>${esc(who)}</b> ${name}${h.reason ? ` — <i>${esc(h.reason)}</i>` : ''}</div><div class="when">${esc(fmt(h.created_at))}</div></li>`;
+    return `<li><div><b>${esc(who)}</b> ${name}${h.action === 'file.uploaded' && h.after ? ` — ${esc(h.after.file_name)} (${esc(h.after.category)})` : ''}${h.action === 'job.handoff_sent' && h.after ? ` — <i>${esc(h.after.note)}</i>` : ''}${h.reason ? ` — <i>${esc(h.reason)}</i>` : ''}</div><div class="when">${esc(fmt(h.created_at))}</div></li>`;
   }).join('') || '<li class="note">No history yet.</li>';
 
   shell('jobs', `<p><a href="#/jobs">← All jobs</a></p>
@@ -205,13 +226,38 @@ async function viewJob(id) {
       <dl class="kv"><dt>Department</dt><dd>${esc(j.departments?.name || '—')}</dd><dt>Owner</dt><dd>${j.assignee ? esc(j.assignee.display_name) : 'Unassigned'}</dd>
         <dt>Due</dt><dd>${esc(fmt(j.due_at))}</dd><dt>Quantity</dt><dd>${j.quantity}</dd><dt>Product</dt><dd>${esc(j.product || '—')}</dd><dt>Size</dt><dd>${esc(j.size || '—')}</dd>
         <dt>Material</dt><dd>${esc(j.material || '—')}</dd><dt>Finishing</dt><dd>${esc(j.finishing || '—')}</dd><dt>Customer phone</dt><dd>${esc(j.customer_phone || '—')}</dd>
-        <dt>Artwork</dt><dd>${j.artwork_required ? (j.approved_file_id ? 'Approved' : 'Required — not yet approved') : 'Not required'}</dd></dl>
+        <dt>Artwork</dt><dd>${j.artwork_required ? (approved ? 'Approved for Print: ' + esc(approved.file_name) + ' (v' + approved.version_no + ')' : 'Required — not yet approved') : 'Not required'}</dd></dl>
       ${blocked}<div class="err" id="je"></div>
       <div class="actions" id="acts">${acts.map((a, i) => `<button class="${a.cls || ''}" data-i="${i}">${esc(a.label)}</button>`).join('')}
         ${!isClosed(j) && (mgr || fd) ? '<button id="asg">Assign…</button><button id="edt">Edit details</button>' : ''}
         ${mgr && !isClosed(j) ? '<button id="cnl" class="danger">Cancel job</button>' : ''}
         ${mgr && idx > 0 && !isClosed(j) ? '<button id="back">Move back…</button>' : ''}
         ${mgr && isClosed(j) ? '<button id="reopen">Reopen…</button>' : ''}</div></div>
+    <div id="j3">
+    ${pending ? `<div class="card notice"><h3 style="margin-top:0">Handoff waiting</h3>
+      <p>${esc(pending.sender?.display_name || 'Someone')} sent this job from <b>${esc(deptName(pending.from_department_id))}</b> to <b>${esc(deptName(pending.to_department_id))}</b>: <i>${esc(pending.note)}</i></p>
+      <div class="actions">${(me.manager_role || inDept(pending.to_department_id)) ? `<button class="primary" data-act="accept" data-id="${pending.id}">Accept job</button>` : ''}
+      ${(mgr || fd || pending.sender?.display_name === me.display_name) ? `<button data-act="cancelhand" data-id="${pending.id}">Cancel handoff</button>` : ''}</div></div>` : ''}
+    <div class="card"><h3 style="margin-top:0">Problems${openHolds.length ? ` <span class="badge late">${openHolds.length} open</span>` : ''}</h3>
+      ${(holds || []).length ? `<ul class="hist">${holds.map((h) => `<li><div><b>${esc(h.kind)}</b> — ${esc(h.note)} <span class="sub">raised by ${esc(h.raiser?.display_name || '')}</span>
+        ${h.resolved_at ? `<div class="sub">Resolved by ${esc(h.resolver?.display_name || '')}: ${esc(h.resolution_note || '')}</div>` : `<div class="actions"><button data-act="resolve" data-id="${h.id}">Resolve…</button></div>`}</div>
+        <div class="when">${esc(fmt(h.raised_at))}</div></li>`).join('')}</ul>` : '<p class="note">No problems on this job.</p>'}
+      ${openHolds.length ? '<p class="note">While a problem is open, this job cannot move forward.</p>' : ''}
+      ${!isClosed(j) ? '<div class="actions"><button data-act="raise">Report a problem…</button></div>' : ''}</div>
+    <div class="card"><h3 style="margin-top:0">Files</h3>
+      ${newerThanApproval ? '<p class="err">A newer file was uploaded after the approved artwork. A manager should check which one to approve.</p>' : ''}
+      ${(files || []).length ? `<ul class="hist">${files.map((f) => `<li><div><b>${esc(f.file_name)}</b> <span class="badge st">v${f.version_no}</span><span class="badge">${esc(f.category)}</span>${f.id === j.approved_file_id ? '<span class="badge ok">Approved for Print</span>' : ''}
+        <div class="sub">${esc(size(f.size_bytes))} · ${esc(f.uploader?.display_name || '')} · ${esc(fmt(f.uploaded_at))}</div>
+        <div class="actions"><button data-act="dl" data-path="${esc(f.storage_path)}">Open</button>
+        ${mgr && !isClosed(j) && f.category !== 'Supporting Document' && f.id !== j.approved_file_id ? `<button class="primary" data-act="approve" data-id="${f.id}">Approve for Print</button>` : ''}</div></div></li>`).join('')}</ul>` : '<p class="note">No files yet.</p>'}
+      ${mgr && j.approved_file_id && !isClosed(j) ? '<div class="actions"><button data-act="unapprove">Withdraw approval…</button></div>' : ''}
+      ${!isClosed(j) ? `<form id="upf" class="uploadbox"><div class="grid2"><label>File<input type="file" name="file" required></label>
+        <label>Type<select name="cat"><option>Customer Original</option><option>Artwork Revision</option>${(mgr || fd) ? '<option>Production Approved</option>' : ''}<option>Supporting Document</option></select></label></div>
+        <div class="note">Files are private to staff who can see this job. Up to 100 MB. They are kept permanently; a new upload becomes a new version.</div>
+        <div class="err" id="ue"></div><div class="actions"><button class="primary" id="ub" type="submit">Upload</button></div></form>` : ''}</div>
+    ${!isClosed(j) && !pending && (owner || mgr || fd) ? `<div class="card"><h3 style="margin-top:0">Hand off</h3><p class="note">Send this job to another department. They must accept it.</p>
+      <div class="actions"><button data-act="handoff">Hand off to another department…</button></div></div>` : ''}
+    </div>
     <div class="card"><h3 style="margin-top:0">History</h3><ul class="hist">${histHtml}</ul></div>`);
 
   const run = async (p) => {
@@ -260,6 +306,51 @@ async function viewJob(id) {
         <label>Reason (required if you change the due date or priority)<input name="reason"></label>`, 'Save');
       if (r) run(call('update_job_details', { p_job: id, p_version: j.version, p_customer: r.customer, p_phone: r.phone, p_desc: r.desc, p_product: r.product, p_qty: Number(r.qty), p_size: r.size, p_material: r.material, p_finishing: r.finishing, p_due: new Date(r.due).toISOString(), p_priority: r.priority, p_reason: r.reason }));
     }
+  };
+
+  const inline = (title, body, ok) => ask(title, body, ok);
+  const upf = document.getElementById('upf');
+  if (upf) upf.onsubmit = async (e) => {
+    e.preventDefault();
+    const file = upf.file.files[0]; const ub = document.getElementById('ub'); const ue = document.getElementById('ue');
+    ue.textContent = '';
+    if (!file) return;
+    if (file.size > 104857600) return (ue.textContent = 'That file is over 100 MB.');
+    ub.disabled = true; ub.textContent = 'Uploading…';
+    const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);
+    const path = `${id}/${crypto.randomUUID()}-${safe}`;
+    try {
+      const up = await sb.storage.from('job-files').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+      if (up.error) throw up.error;
+      await call('register_file', { p_job: id, p_category: upf.cat.value, p_name: file.name, p_mime: file.type || null, p_size: file.size, p_path: path });
+      viewJob(id);
+    } catch (err) { ue.textContent = friendly(err); ub.disabled = false; ub.textContent = 'Upload'; }
+  };
+  const j3 = document.getElementById('j3');
+  j3.onclick = async (e) => {
+    const b = e.target.closest('button[data-act]'); if (!b) return;
+    const act = b.dataset.act, bid = b.dataset.id;
+    if (act === 'dl') {
+      const { data, error: er } = await sb.storage.from('job-files').createSignedUrl(b.dataset.path, 120);
+      if (er) return (document.getElementById('je').textContent = friendly(er));
+      return window.open(data.signedUrl, '_blank', 'noopener');
+    }
+    if (act === 'approve') return run(call('approve_artwork', { p_job: id, p_version: j.version, p_file: bid }));
+    if (act === 'unapprove') { const r = await reasonDlg('Withdraw artwork approval — why?'); if (r) run(call('withdraw_artwork_approval', { p_job: id, p_version: j.version, p_reason: r.reason })); }
+    if (act === 'raise') {
+      const r = await ask('Report a problem', `<label>What kind?<select name="kind">${['Missing artwork', 'Waiting on customer', 'Material shortage', 'Machine problem', 'Quality problem', 'Other'].map((k) => `<option>${k}</option>`).join('')}</select></label>
+        <label>Details<textarea name="note" rows="3" required></textarea></label><p class="note">The job cannot move forward until this is resolved.</p>`, 'Report');
+      if (r) run(call('raise_hold', { p_job: id, p_kind: r.kind, p_note: r.note }));
+    }
+    if (act === 'resolve') { const r = await ask('Resolve problem', '<label>How was it resolved?<textarea name="note" rows="2" required></textarea></label>', 'Resolve'); if (r) run(call('resolve_hold', { p_hold: bid, p_note: r.note })); }
+    if (act === 'handoff') {
+      const others = depts.filter((d) => d.id !== j.current_department_id);
+      const r = await ask('Hand off job', `<label>Send to<select name="to">${others.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('')}</select></label>
+        <label>Handoff note (what is done, what comes next)<textarea name="note" rows="3" required></textarea></label>`, 'Send handoff');
+      if (r) run(call('handoff_job', { p_job: id, p_to_dept: r.to, p_note: r.note }));
+    }
+    if (act === 'accept') return run(call('accept_handoff', { p_handoff: bid, p_version: j.version }));
+    if (act === 'cancelhand') return run(call('cancel_handoff', { p_handoff: bid }));
   };
 }
 
