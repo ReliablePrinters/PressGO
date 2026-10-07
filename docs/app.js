@@ -100,9 +100,10 @@ function showBlocked(session, why) {
 // ---------------------------------------------------------------- shell + routing
 function shell(active, inner) {
   $app.innerHTML = `<header class="top"><h1>PressGO</h1>
-    <nav><a href="#/jobs" class="${active === 'jobs' ? 'on' : ''}">Jobs</a>${canCreate() ? `<a href="#/new" class="${active === 'new' ? 'on' : ''}">+ New job</a>` : ''}${me.manager_role ? `<a href="#/staff" class="${active === 'staff' ? 'on' : ''}">Staff</a>` : ''}</nav>
+    <nav><a href="#/jobs" class="${active === 'jobs' ? 'on' : ''}">Jobs</a>${canCreate() ? `<a href="#/new" class="${active === 'new' ? 'on' : ''}">+ New job</a>` : ''}<a href="#/chat" id="chatlink" class="${active === 'chat' ? 'on' : ''}">Chat</a>${me.manager_role ? `<a href="#/staff" class="${active === 'staff' ? 'on' : ''}">Staff</a>` : ''}</nav>
     <span class="me">${esc(me.display_name)}${me.manager_role ? ' · Manager' : ''}${me.front_desk ? ' · Front Desk' : ''}</span>
     <button id="cpw">Change password</button><button id="so">Sign out</button></header><main>${inner}</main>`;
+  if (window.chatBadge) window.chatBadge();
   document.getElementById('cpw').onclick = async () => {
     const r = await ask('Change my password', '<label>New password (at least 8 characters)<input name="p1" type="password" required minlength="8" autocomplete="new-password"></label><label>Type it again<input name="p2" type="password" required minlength="8" autocomplete="new-password"></label>', 'Save password');
     if (!r) return;
@@ -114,6 +115,8 @@ function shell(active, inner) {
 }
 function route() {
   const h = location.hash || '#/jobs';
+  if (window.chatLeave) window.chatLeave();
+  if (h.startsWith('#/chat')) return window.viewChat(h);
   if (h === '#/new') return canCreate() ? viewNew() : (location.hash = '#/jobs');
   if (h === '#/staff') return me.manager_role ? viewStaff() : (location.hash = '#/jobs');
   const m = h.match(/^#\/job\/([0-9a-f-]{36})$/);
@@ -291,7 +294,7 @@ async function viewJob(id) {
     return `<li><div><b>${esc(who)}</b> ${name}${h.action === 'file.uploaded' && h.after ? ` — ${esc(h.after.file_name)} (${esc(h.after.category)})` : ''}${h.action === 'job.handoff_sent' && h.after ? ` — <i>${esc(h.after.note)}</i>` : ''}${h.reason ? ` — <i>${esc(h.reason)}</i>` : ''}</div><div class="when">${esc(fmt(h.created_at))}</div></li>`;
   }).join('') || '<li class="note">No history yet.</li>';
 
-  shell('jobs', `<p><a href="#/jobs">← All jobs</a></p>
+  shell('jobs', `<p><a href="#/jobs">← All jobs</a> · <a href="#/chat/job/${j.id}">Job chat</a></p>
     <div class="card"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><h2 style="margin:0">#${j.job_number} · ${esc(j.customer_name)}</h2>
       <div><span class="badge st ${isClosed(j) ? 'done' : ''}">${esc(j.lifecycle_status)}</span>${j.priority === 'Rush' ? '<span class="badge rush">Rush</span>' : ''}${isLate(j) ? '<span class="badge late">Overdue</span>' : ''}</div></div>
       <p>${esc(j.description)}</p>
