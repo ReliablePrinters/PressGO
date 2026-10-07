@@ -31,7 +31,7 @@
 
   const color = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 55% 46%)`; };
   const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-  const avatar = (n, s) => `<span class="av" style="background:${color(n)}${s ? `;width:${s}px;height:${s}px;font-size:${Math.max(9, Math.round(s * 0.38))}px` : ''}" title="${esc(n)}">${esc(initials(n))}</span>`;
+  const avatar = (n, s) => `<span class="av ${stClass(n)}" data-n="${esc(n)}" style="background:${color(n)}${s ? `;width:${s}px;height:${s}px;font-size:${Math.max(9, Math.round(s * 0.38))}px` : ''}" title="${esc(n)}">${esc(initials(n))}</span>`;
   window.pgAvatar = avatar;
   const timeOf = (d) => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const dayLabel = (d) => {
@@ -53,6 +53,44 @@
     return data || [];
   }
 
+
+  // ---------------------------------------------------------------- online / on break / offline marks
+  const onlineNames = new Set(), breakNames = new Set();
+  let presCh = null, statTimer = null;
+  const stClass = (n) => (onlineNames.has(n) ? (breakNames.has(n) ? 'st-break' : 'st-on') : 'st-off');
+  const stText = (n) => ({ 'st-on': 'Online', 'st-break': 'On break', 'st-off': 'Offline' }[stClass(n)]);
+  function paintStatus() {
+    document.querySelectorAll('.av[data-n]').forEach((a) => {
+      a.classList.remove('st-on', 'st-break', 'st-off');
+      a.classList.add(stClass(a.dataset.n));
+      a.title = a.dataset.n + ' - ' + stText(a.dataset.n);
+    });
+    const b = document.getElementById('brk');
+    if (b && me) { const on = breakNames.has(me.display_name); b.textContent = on ? 'Back from break' : 'Take a break'; b.className = on ? 'brk on' : 'brk'; }
+  }
+  async function loadBreaks() {
+    try {
+      const { data } = await sb.from('employee_status').select('break_since,emp:employee_id(display_name)');
+      breakNames.clear();
+      (data || []).forEach((r) => { if (r.break_since && r.emp) breakNames.add(r.emp.display_name); });
+      paintStatus();
+    } catch (e) { /* keep what we have */ }
+  }
+  function ensurePresence() {
+    if (presCh || !me) return;
+    const key = me.display_name;
+    presCh = sb.channel('presence-all', { config: { presence: { key } } })
+      .on('presence', { event: 'sync' }, () => {
+        onlineNames.clear();
+        Object.keys(presCh.presenceState()).forEach((k) => onlineNames.add(k));
+        paintStatus();
+      })
+      .on('postgres_changes', { event: '*', schema: 'pressgo', table: 'employee_status' }, loadBreaks)
+      .subscribe((s) => { if (s === 'SUBSCRIBED') presCh.track({ at: Date.now() }); });
+    loadBreaks();
+    statTimer = setInterval(() => { if (me) loadBreaks(); }, 60000);
+  }
+
   // ---------------------------------------------------------------- sidebar (channels + private messages)
   function renderSide() {
     const box = document.getElementById('sidechats');
@@ -61,11 +99,15 @@
     const chans = convs.filter((c) => ['general', 'urgent', 'department'].includes(c.type));
     const jobs = convs.filter((c) => c.type === 'job').slice(0, 8);
     const dms = convs.filter((c) => c.type === 'direct');
-    box.innerHTML = `<h4>Channels</h4>${chans.map((c) => item(c, '# ')).join('') || '<div class="note" style="padding:4px 10px">Loading…</div>'}
+    box.innerHTML = `<button type="button" id="brk" class="brk">Take a break</button><h4>Channels</h4>${chans.map((c) => item(c, '# ')).join('') || '<div class="note" style="padding:4px 10px">Loading…</div>'}
       ${jobs.length ? `<h4>Job chats</h4>${jobs.map((c) => item(c, '')).join('')}` : ''}
       <h4>Direct messages <button id="sidenew" title="New private message">+</button></h4>
       ${dms.map((c) => item(c, '')).join('') || '<div class="note" style="padding:4px 10px">No private messages yet.</div>'}`;
     box.querySelector('#sidenew').onclick = newDirect;
+    box.querySelector('#brk').onclick = async () => {
+      try { await call('set_break', { p_on: !breakNames.has(me.display_name) }); await loadBreaks(); } catch (e) { alert2(friendly(e)); }
+    };
+    paintStatus();
   }
   function ensureRealtime() {
     if (rt) return;
@@ -79,6 +121,7 @@
     renderSide();
     try { convs = await loadList(); renderSide(); } catch (e) { /* keep what we have */ }
     ensureRealtime();
+    ensurePresence();
     if (!sideTimer) sideTimer = setInterval(() => { if (me) window.chatSidebar(); }, 30000);
   };
   window.chatBadge = window.chatSidebar;
@@ -114,13 +157,23 @@
     return (u ? `<a href="${esc(u)}" target="_blank" rel="noopener"><img class="pic" src="${esc(u)}" alt="${esc(m.attachment_name || 'photo')}" loading="lazy"></a>` : '<div class="note">Picture unavailable</div>') + cap;
   };
 
-  const bodyHtml = (m) => (m.hidden_at ? '<i class="gone">This message was deleted</i>' : m.attachment_path ? picHtml(m) : esc(m.body));
+  const canApprove = () => me.manager_role || me.front_desk;
+  const apprHtml = (m) => {
+    if (m.approved_at) {
+      const by = m.approver?.display_name || 'someone';
+      const back = (m.approved_by === me.id || me.manager_role) ? ` <button type="button" class="lnk" data-unappr="${m.id}">Take back</button>` : '';
+      return `<div class="appr ok">&#10003; Approved by <b>${esc(by)}</b> &middot; ${esc(timeOf(m.approved_at))}${back}</div>`;
+    }
+    if (canApprove() && m.author_id !== me.id) return `<div class="appr"><button type="button" class="primary sm" data-appr="${m.id}">&#10003; Approve</button> <span class="note">Approving tells the sender (and the job owner) to go ahead.</span></div>`;
+    return '<div class="appr wait">Waiting for approval</div>';
+  };
+  const bodyHtml = (m) => (m.hidden_at ? '<i class="gone">This message was deleted</i>' : m.attachment_path ? picHtml(m) + apprHtml(m) : esc(m.body));
   const delBtn = (m) => (!m.hidden_at && (m.author_id === me.id || (me.manager_role && curType !== 'direct'))
     ? `<button type="button" class="del" data-del="${m.id}" title="Delete message" aria-label="Delete message"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button>` : '');
 
   async function loadThread(conv) {
     const { data, error } = await sb.from('messages')
-      .select('id,body,sent_at,author_id,attachment_path,attachment_name,hidden_at,author:author_id(display_name)')
+      .select('id,body,sent_at,author_id,attachment_path,attachment_name,hidden_at,approved_by,approved_at,author:author_id(display_name),approver:approved_by(display_name)')
       .eq('conversation_id', conv).order('sent_at', { ascending: false }).limit(200);
     const box = document.getElementById('msgs');
     if (!box || current !== conv) return;
@@ -228,6 +281,14 @@
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } };
     document.getElementById('msgs').onclick = async (e) => {
+      const ap = e.target.closest('[data-appr],[data-unappr]');
+      if (ap) {
+        const un = !!ap.dataset.unappr;
+        if (un && !(await ask('Take back approval?', '<p>The picture will go back to "Waiting for approval".</p>', 'Take back'))) return;
+        try { await call('approve_picture', { p_msg: un ? ap.dataset.unappr : ap.dataset.appr, p_approve: !un }); await loadThread(conv); window.chatSidebar(); }
+        catch (err) { alert2(friendly(err)); }
+        return;
+      }
       const b = e.target.closest('[data-del]');
       if (!b) return;
       const yes = await ask('Delete this message?', '<p>Everyone in this chat will see "This message was deleted". This cannot be undone.</p>', 'Delete');
