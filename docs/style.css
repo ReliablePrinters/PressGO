@@ -81,3 +81,84 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .pend img{width:48px;height:48px;object-fit:cover;border-radius:6px}
 .pend span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.9em}
 .pend button{background:none;border:0;font-size:1.4em;cursor:pointer;color:inherit}
+
+/* ---- Fresh look: softer colours, round avatars, dark sidebar, typing dots ---- */
+:root{--bg:#f4f5f9;--card:#fff;--ink:#171a21;--mut:#6b7280;--line:#e6e8ee;--brand:#4561ff;--side:#141826;--shadow:0 1px 2px rgba(16,24,40,.05),0 6px 18px rgba(16,24,40,.05)}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1218;--card:#181c25;--ink:#eceef3;--mut:#98a1b3;--line:#272c38;--brand:#7c8bff;--side:#0b0e16;--shadow:0 1px 2px rgba(0,0,0,.4)}}
+*{scrollbar-width:thin}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+h2{letter-spacing:-.01em}
+.card,.stats .stat,.job{box-shadow:var(--shadow)}
+.card{border-radius:16px}
+button{transition:background .15s,border-color .15s,transform .05s,filter .15s}
+button:hover:not(:disabled){border-color:var(--brand)}
+button:active:not(:disabled){transform:translateY(1px)}
+button.primary:hover:not(:disabled){filter:brightness(1.08)}
+input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(--brand) 40%,transparent);outline-offset:0;border-color:var(--brand)}
+.job{border-left:4px solid var(--line);border-radius:12px;transition:box-shadow .15s,transform .15s,border-color .15s}
+a.job:hover{border-color:var(--brand);transform:translateY(-1px);box-shadow:0 8px 22px rgba(16,24,40,.1)}
+.badge{border-color:transparent;background:color-mix(in srgb,var(--mut) 14%,transparent)}
+.badge.st{background:color-mix(in srgb,var(--brand) 14%,transparent)}
+.badge.rush,.badge.late{background:color-mix(in srgb,var(--bad) 13%,transparent)}
+.badge.ok,.badge.done{background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.stats .stat{border-radius:14px;transition:transform .15s}
+.stats .stat:hover{transform:translateY(-2px)}
+.stats .stat b{font-size:28px;letter-spacing:-.02em}
+.stats .stat.hot{background:color-mix(in srgb,var(--bad) 7%,var(--card))}
+
+/* avatars */
+.av{display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;border-radius:50%;color:#fff;font-weight:700;font-size:11px;line-height:1;vertical-align:middle;letter-spacing:.02em;user-select:none;box-shadow:0 0 0 2px var(--card)}
+.sub .av,.kv .av,.hist .av{margin-right:2px;box-shadow:none}
+.who{display:flex;gap:12px;align-items:center}
+h2.hi{display:flex;align-items:center;gap:12px}
+.hist li .av{margin-right:6px}
+
+/* dark sidebar */
+.app .side{background:var(--side);color:#cdd3e6;border-right:0}
+.app .side .brand{display:flex;align-items:center;color:#fff;padding:16px 16px 12px}
+.logo{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-right:10px;border-radius:9px;background:linear-gradient(135deg,#6d7bff,#a35cff);color:#fff;font-weight:800;font-size:15px}
+.logo.big{width:54px;height:54px;font-size:26px;border-radius:15px;margin:0 0 12px}
+.app .side a.nav{color:#cdd3e6;position:relative}
+.app .side a.nav:hover{background:rgba(255,255,255,.08)}
+.app .side a.nav.on{background:rgba(255,255,255,.14);color:#fff}
+.app .side a.nav.on:before{content:"";position:absolute;left:-8px;top:8px;bottom:8px;width:3px;border-radius:3px;background:#8c9bff}
+.app .side a.nav.ch .nm{display:flex;align-items:center;gap:8px}
+.app .side a.nav.unread{color:#fff}
+.app .side h4{color:#8791ad}
+.app .side h4 button{background:rgba(255,255,255,.08);border-color:transparent;color:#e6e9f5}
+.app .side .dot{background:#ff5d73}
+.app .side .foot{border-top:1px solid rgba(255,255,255,.1);color:#fff}
+.app .side .foot .note{color:#8791ad}
+.app .side .foot button{background:rgba(255,255,255,.08);border-color:transparent;color:#e6e9f5}
+.app .side .foot button:hover{background:rgba(255,255,255,.16);border-color:transparent}
+.app .side .av{box-shadow:0 0 0 2px var(--side)}
+.me2{display:flex;align-items:center;gap:10px}
+.mobbar{background:var(--side);color:#fff;border-bottom:0}
+.mobbar button{background:rgba(255,255,255,.1);border-color:transparent;color:#fff}
+
+/* chat */
+.thread .th-head{box-shadow:var(--shadow);position:relative;z-index:1}
+.thread .ttl{display:flex;align-items:center;gap:10px}
+.thread .msg{border-radius:12px}
+.thread .msg.mine{background:color-mix(in srgb,var(--brand) 7%,transparent)}
+.thread .msg .bd{line-height:1.5}
+.thread form.send{align-items:center}
+.thread form.send textarea{border-radius:22px;padding:11px 16px;border-color:var(--line)}
+.thread form.send button.primary{border-radius:22px;padding:0 22px}
+.send .clip{height:44px;width:44px;border-radius:50%;justify-content:center;padding:0}
+.send .clip:hover{background:color-mix(in srgb,var(--mut) 14%,transparent)}
+.pic{box-shadow:var(--shadow)}
+
+/* "someone is typing" */
+.typing{display:flex;align-items:center;gap:8px;padding:2px 22px 6px;min-height:26px;font-size:13px;color:var(--mut)}
+.typing[hidden]{display:flex;visibility:hidden}
+.typing .av{margin-left:-8px;box-shadow:0 0 0 2px var(--bg)}
+.typing .av:first-child{margin-left:0}
+.dots{display:inline-flex;gap:3px;align-items:center}
+.dots b{display:block;width:5px;height:5px;border-radius:50%;background:var(--mut);animation:pgdot 1.2s infinite ease-in-out}
+.dots b:nth-child(2){animation-delay:.15s}.dots b:nth-child(3){animation-delay:.3s}
+@keyframes pgdot{0%,60%,100%{transform:translateY(0);opacity:.35}30%{transform:translateY(-4px);opacity:1}}
+@media(prefers-reduced-motion:reduce){.dots b{animation:none;opacity:.7}}
+
+/* sign-in */
+.center.card{box-shadow:0 18px 50px rgba(16,24,40,.14);padding:28px}
