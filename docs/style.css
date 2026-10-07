@@ -170,3 +170,17 @@ h2.hi{display:flex;align-items:center;gap:12px}
 .thread .del:hover{color:var(--bad);border-color:var(--bad)}
 .gone{color:var(--mut);font-style:italic}
 @media(hover:none){.thread .del{display:block;opacity:.55}}
+
+/* status marks and approvals */
+.av{position:relative}
+.av.st-on::after,.av.st-break::after,.av.st-off::after{content:"";position:absolute;right:-2px;bottom:-2px;width:34%;height:34%;min-width:8px;min-height:8px;border-radius:50%;border:2px solid var(--card);box-sizing:content-box}
+.app .side .av.st-on::after,.app .side .av.st-break::after,.app .side .av.st-off::after{border-color:var(--side)}
+.av.st-on::after{background:#22c55e}.av.st-break::after{background:#f5a524}.av.st-off::after{background:#8b93a7}
+.brk{display:block;width:calc(100% - 16px);margin:4px 8px 8px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.08);border:1px solid transparent;color:#e6e9f5;font-size:13px;cursor:pointer}
+.brk:hover{background:rgba(255,255,255,.16)}
+.brk.on{background:#f5a524;color:#222;font-weight:600}
+.appr{margin-top:6px;font-size:13px}
+.appr.ok{display:inline-block;padding:4px 10px;border-radius:999px;background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok);font-weight:500}
+.appr.wait{color:var(--mut);font-style:italic}
+.appr .sm{padding:5px 12px;font-size:13px;border-radius:999px}
+.appr .lnk{background:none;border:0;padding:0 0 0 6px;color:inherit;text-decoration:underline;font-size:12px;cursor:pointer}
