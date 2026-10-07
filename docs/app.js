@@ -301,7 +301,8 @@ async function viewJob(id) {
     const name = { 'job.created': 'created the job', 'job.assigned': 'changed the owner or department', 'job.unassigned': 'removed the owner', 'job.details_changed': 'changed the details',
       'file.uploaded': 'uploaded a file', 'job.artwork_approved': 'approved artwork', 'job.artwork_approval_withdrawn': 'withdrew artwork approval',
       'job.problem_raised': 'reported a problem', 'job.problem_resolved': 'resolved a problem', 'job.handoff_sent': 'sent a handoff',
-      'job.handoff_accepted': 'accepted a handoff', 'job.handoff_cancelled': 'cancelled a handoff' }[h.action]
+      'job.handoff_accepted': 'accepted a handoff', 'job.handoff_cancelled': 'cancelled a handoff',
+      'job.picture_approved': 'approved a picture', 'job.picture_approval_withdrawn': 'took back a picture approval' }[h.action]
       || (h.action.startsWith('job.status_') ? `changed status: ${esc(h.before?.lifecycle_status)} → <b>${esc(h.after?.lifecycle_status)}</b>` : esc(h.action));
     return `<li><div>${window.pgAvatar(who, 20)} <b>${esc(who)}</b> ${name}${h.action === 'file.uploaded' && h.after ? ` — ${esc(h.after.file_name)} (${esc(h.after.category)})` : ''}${h.action === 'job.handoff_sent' && h.after ? ` — <i>${esc(h.after.note)}</i>` : ''}${h.reason ? ` — <i>${esc(h.reason)}</i>` : ''}</div><div class="when">${esc(fmt(h.created_at))}</div></li>`;
   }).join('') || '<li class="note">No history yet.</li>';
