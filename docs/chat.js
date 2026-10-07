@@ -80,12 +80,31 @@
   }
 
   async function newDirect() {
-    const { data } = await sb.from('employees').select('id,display_name').eq('active', true).neq('id', me.id).order('display_name');
-    if (!data || !data.length) return alert2('There is nobody else to message yet.');
-    const r = await ask('New private message',
-      `<label>Who do you want to message?<select name="who" required>${data.map((p) => `<option value="${p.id}">${esc(p.display_name)}</option>`).join('')}</select></label>`, 'Open chat');
+    const opts = '<option value="">Pick a group…</option><option value="all">All staff</option>' + depts.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+    const asked = ask('New private message',
+      `<label>Choose from<select name="grp">${opts}</select></label><div id="pp" class="note">Pick a department (or All staff) to see the people. Tick one person, several, or everyone.</div>`, 'Start chat');
+    const sel = dlg.querySelector('[name=grp]'), pp = dlg.querySelector('#pp');
+    sel.onchange = async () => {
+      if (!sel.value) { pp.textContent = 'Pick a department (or All staff) to see the people.'; return; }
+      pp.textContent = 'Loading…';
+      let list;
+      if (sel.value === 'all') {
+        const { data } = await sb.from('employees').select('id,display_name').eq('active', true).order('display_name');
+        list = (data || []).map((x) => ({ employee_id: x.id, display_name: x.display_name }));
+      } else ({ data: list } = await sb.rpc('department_staff', { p_dept: sel.value }));
+      list = (list || []).filter((x) => x.employee_id !== me.id);
+      pp.className = '';
+      pp.innerHTML = list.length
+        ? `<label class="inline"><input type="checkbox" id="allp"> <b>Everyone listed</b></label>` + list.map((x) => `<label class="inline"><input type="checkbox" name="who" value="${x.employee_id}"> ${esc(x.display_name)}</label>`).join('')
+        : '<span class="note">Nobody else is in this department yet.</span>';
+      const all = pp.querySelector('#allp');
+      if (all) all.onchange = () => pp.querySelectorAll('[name=who]').forEach((c) => { c.checked = all.checked; });
+    };
+    const r = await asked;
     if (!r) return;
-    try { location.hash = '#/chat/' + (await call('start_direct', { p_other: r.who })); } catch (e) { alert2(friendly(e)); }
+    const ids = [].concat(r.who || []);
+    if (!ids.length) return alert2('Tick at least one person.');
+    try { location.hash = '#/chat/' + (await call('start_chat', { p_people: ids })); } catch (e) { alert2(friendly(e)); }
   }
 
   window.viewChat = async function (hash) {
