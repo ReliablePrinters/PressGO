@@ -13,7 +13,7 @@
 .thread .msg{display:flex;gap:10px;padding:3px 6px;border-radius:8px;margin-top:8px}
 .thread .msg.cont{margin-top:0}
 .thread .msg:hover{background:color-mix(in srgb,var(--mut) 9%,transparent)}
-.thread .av{flex:none;width:36px;height:36px;border-radius:8px;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}
+.thread .av{flex:none;width:36px;height:36px;font-size:13px}
 .thread .gut{flex:none;width:36px;text-align:right;color:transparent;font-size:11px;padding-top:3px}
 .thread .msg.cont:hover .gut{color:var(--mut)}
 .thread .hd{line-height:1.2}.thread .hd .tm{color:var(--mut);font-size:12px;margin-left:6px}
@@ -27,11 +27,12 @@
 `;
   document.head.appendChild(css);
 
-  let timer = null, sideTimer = null, rt = null, current = null, convs = [];
+  let timer = null, sideTimer = null, rt = null, current = null, convs = [], tch = null, clearTyper = null;
 
-  const color = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 50% 42%)`; };
+  const color = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 55% 46%)`; };
   const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-  const avatar = (n) => `<span class="av" style="background:${color(n)}">${esc(initials(n))}</span>`;
+  const avatar = (n, s) => `<span class="av" style="background:${color(n)}${s ? `;width:${s}px;height:${s}px;font-size:${Math.max(9, Math.round(s * 0.38))}px` : ''}" title="${esc(n)}">${esc(initials(n))}</span>`;
+  window.pgAvatar = avatar;
   const timeOf = (d) => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const dayLabel = (d) => {
     const t = new Date(d), n = new Date(), y = new Date(); y.setDate(n.getDate() - 1);
@@ -41,6 +42,8 @@
 
   window.chatLeave = function () {
     if (timer) { clearInterval(timer); timer = null; }
+    if (tch) { sb.removeChannel(tch); tch = null; }
+    clearTyper = null;
     current = null;
   };
 
@@ -54,7 +57,7 @@
   function renderSide() {
     const box = document.getElementById('sidechats');
     if (!box) return;
-    const item = (c, pre) => `<a class="nav ch ${c.id === current ? 'on' : ''} ${Number(c.unread) ? 'unread' : ''}" href="#/chat/${c.id}"><span class="nm">${pre}${esc(c.name || '')}</span>${Number(c.unread) ? `<span class="dot">${c.unread}</span>` : ''}</a>`;
+    const item = (c, pre) => `<a class="nav ch ${c.id === current ? 'on' : ''} ${Number(c.unread) ? 'unread' : ''}" href="#/chat/${c.id}"><span class="nm">${c.type === 'direct' ? avatar(c.name, 22) : ''}${pre}${esc(c.name || '')}</span>${Number(c.unread) ? `<span class="dot">${c.unread}</span>` : ''}</a>`;
     const chans = convs.filter((c) => ['general', 'urgent', 'department'].includes(c.type));
     const jobs = convs.filter((c) => c.type === 'job').slice(0, 8);
     const dms = convs.filter((c) => c.type === 'direct');
@@ -67,6 +70,7 @@
   function ensureRealtime() {
     if (rt) return;
     rt = sb.channel('chat-all').on('postgres_changes', { event: 'INSERT', schema: 'pressgo', table: 'messages' }, (p) => {
+      if (clearTyper) clearTyper(p.new.author_id);
       if (p.new.conversation_id === current) loadThread(current); else window.chatSidebar();
     }).subscribe();
   }
@@ -208,8 +212,9 @@
     const sub = info.type === 'direct' ? 'Private — only the people in this chat can see it'
       : info.type === 'job' ? `<a href="#/job/${info.job_id}">Open this job</a>`
       : info.type === 'department' ? 'Department channel — this department and managers' : 'Everyone';
-    main.innerHTML = `<div class="thread"><div class="th-head"><div class="ttl">${esc((['general', 'urgent', 'department'].includes(info.type) ? '# ' : '') + (info.name || ''))}</div><div class="sub">${sub}</div></div>
+    main.innerHTML = `<div class="thread"><div class="th-head"><div class="ttl">${info.type === 'direct' ? avatar(info.name, 28) : ''}${esc((['general', 'urgent', 'department'].includes(info.type) ? '# ' : '') + (info.name || ''))}</div><div class="sub">${sub}</div></div>
       <div class="msgs" id="msgs"><p class="note">Loading…</p></div>
+      <div class="typing" id="typing" hidden></div>
       <div class="pend" id="pend" hidden></div>
       <form class="send" id="sendf"><button type="button" class="clip" id="clip" title="Add a picture" aria-label="Add a picture"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button><input type="file" id="pic" accept="image/*" hidden><textarea name="body" maxlength="4000" rows="1" placeholder="Message ${esc(info.name || '')}"></textarea><button class="primary" type="submit">Send</button></form></div>`;
     await loadThread(conv);
@@ -217,6 +222,29 @@
     ta.focus();
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } };
+    // "Ana is typing..." : tiny live signals sent between the people who have this chat open (nothing is saved)
+    const typers = new Map(); let lastSent = 0;
+    const tbox = document.getElementById('typing');
+    const drawTyping = () => {
+      const now = Date.now();
+      for (const [k, v] of typers) if (v.until < now) typers.delete(k);
+      const names = [...typers.values()].map((v) => v.name);
+      if (!names.length) { tbox.hidden = true; tbox.innerHTML = ''; return; }
+      const who = names.length === 1 ? names[0] : names.length === 2 ? names.join(' and ') : 'Several people';
+      tbox.hidden = false;
+      tbox.innerHTML = `${names.slice(0, 3).map((n) => avatar(n, 20)).join('')}<span><b>${esc(who)}</b> ${names.length === 1 ? 'is' : 'are'} typing</span><i class="dots"><b></b><b></b><b></b></i>`;
+    };
+    clearTyper = (id) => { if (typers.delete(id)) drawTyping(); };
+    tch = sb.channel('typing:' + conv, { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (!payload || payload.id === me.id) return;
+        typers.set(payload.id, { name: String(payload.name || '?').slice(0, 60), until: Date.now() + 4500 });
+        drawTyping(); setTimeout(drawTyping, 4600);
+      }).subscribe();
+    ta.addEventListener('input', () => {
+      const n = Date.now();
+      if (ta.value.trim() && n - lastSent > 2500 && tch) { lastSent = n; tch.send({ type: 'broadcast', event: 'typing', payload: { id: me.id, name: me.display_name } }); }
+    });
     let pending = null;
     const pend = document.getElementById('pend'), pic = document.getElementById('pic');
     const showPend = () => {
