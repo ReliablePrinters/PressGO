@@ -100,10 +100,11 @@ function showBlocked(session, why) {
 // ---------------------------------------------------------------- shell + routing
 function shell(active, inner) {
   $app.innerHTML = `<header class="top"><h1>PressGO</h1>
-    <nav><a href="#/jobs" class="${active === 'jobs' ? 'on' : ''}">Jobs</a>${canCreate() ? `<a href="#/new" class="${active === 'new' ? 'on' : ''}">+ New job</a>` : ''}<a href="#/chat" id="chatlink" class="${active === 'chat' ? 'on' : ''}">Chat</a>${me.manager_role ? `<a href="#/staff" class="${active === 'staff' ? 'on' : ''}">Staff</a>` : ''}</nav>
+    <nav><a href="#/home" class="${active === 'home' ? 'on' : ''}">Home</a><a href="#/jobs" class="${active === 'jobs' ? 'on' : ''}">Jobs</a>${canCreate() ? `<a href="#/new" class="${active === 'new' ? 'on' : ''}">+ New job</a>` : ''}<a href="#/chat" id="chatlink" class="${active === 'chat' ? 'on' : ''}">Chat</a><a href="#/tasks" class="${active === 'tasks' ? 'on' : ''}">Tasks</a><a href="#/alerts" id="alertlink" class="${active === 'alerts' ? 'on' : ''}">Alerts</a>${me.manager_role ? `<a href="#/staff" class="${active === 'staff' ? 'on' : ''}">Staff</a>` : ''}</nav>
     <span class="me">${esc(me.display_name)}${me.manager_role ? ' · Manager' : ''}${me.front_desk ? ' · Front Desk' : ''}</span>
     <button id="cpw">Change password</button><button id="so">Sign out</button></header><main>${inner}</main>`;
   if (window.chatBadge) window.chatBadge();
+  if (window.alertBadge) window.alertBadge();
   document.getElementById('cpw').onclick = async () => {
     const r = await ask('Change my password', '<label>New password (at least 8 characters)<input name="p1" type="password" required minlength="8" autocomplete="new-password"></label><label>Type it again<input name="p2" type="password" required minlength="8" autocomplete="new-password"></label>', 'Save password');
     if (!r) return;
@@ -114,9 +115,12 @@ function shell(active, inner) {
   document.getElementById('so').onclick = async () => { await sb.auth.signOut(); me = null; showLogin(); };
 }
 function route() {
-  const h = location.hash || '#/jobs';
+  const h = location.hash || '#/home';
   if (window.chatLeave) window.chatLeave();
   if (h.startsWith('#/chat')) return window.viewChat(h);
+  if (h === '#/home') return window.viewHome();
+  if (h === '#/tasks') return window.viewTasks();
+  if (h === '#/alerts') return window.viewAlerts();
   if (h === '#/new') return canCreate() ? viewNew() : (location.hash = '#/jobs');
   if (h === '#/staff') return me.manager_role ? viewStaff() : (location.hash = '#/jobs');
   const m = h.match(/^#\/job\/([0-9a-f-]{36})$/);
@@ -333,7 +337,9 @@ async function viewJob(id) {
     ${!isClosed(j) && !pending && (owner || mgr || fd) ? `<div class="card"><h3 style="margin-top:0">Hand off</h3><p class="note">Send this job to another department. They must accept it.</p>
       <div class="actions"><button data-act="handoff">Hand off to another department…</button></div></div>` : ''}
     </div>
+    <div id="jobtasks"></div>
     <div class="card"><h3 style="margin-top:0">History</h3><ul class="hist">${histHtml}</ul></div>`);
+  if (window.jobTasks) window.jobTasks(id);
 
   const run = async (p) => {
     try { await p; viewJob(id); }
