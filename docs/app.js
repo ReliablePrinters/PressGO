@@ -99,11 +99,19 @@ function showBlocked(session, why) {
 
 // ---------------------------------------------------------------- shell + routing
 function shell(active, inner) {
-  $app.innerHTML = `<header class="top"><h1>PressGO</h1>
-    <nav><a href="#/home" class="${active === 'home' ? 'on' : ''}">Home</a><a href="#/jobs" class="${active === 'jobs' ? 'on' : ''}">Jobs</a>${canCreate() ? `<a href="#/new" class="${active === 'new' ? 'on' : ''}">+ New job</a>` : ''}<a href="#/chat" id="chatlink" class="${active === 'chat' ? 'on' : ''}">Chat</a><a href="#/tasks" class="${active === 'tasks' ? 'on' : ''}">Tasks</a><a href="#/alerts" id="alertlink" class="${active === 'alerts' ? 'on' : ''}">Alerts</a>${me.manager_role ? `<a href="#/staff" class="${active === 'staff' ? 'on' : ''}">Staff</a>` : ''}</nav>
-    <span class="me">${esc(me.display_name)}${me.manager_role ? ' · Manager' : ''}${me.front_desk ? ' · Front Desk' : ''}</span>
-    <button id="cpw">Change password</button><button id="so">Sign out</button></header><main>${inner}</main>`;
-  if (window.chatBadge) window.chatBadge();
+  const nav = (href, key, label) => `<a class="nav ${active === key ? 'on' : ''}" href="${href}">${label}</a>`;
+  const roles = [me.manager_role ? 'Manager' : '', me.front_desk ? 'Front Desk' : ''].filter(Boolean).join(' · ');
+  $app.innerHTML = `<div class="app" id="appbox"><div class="mobbar"><button id="burger" aria-label="Menu">☰</button><b>PressGO</b></div>
+    <aside class="side"><div class="brand">PressGO</div><div class="scroll">
+      ${nav('#/home', 'home', 'Home')}${nav('#/jobs', 'jobs', 'Jobs')}${canCreate() ? nav('#/new', 'new', '+ New job') : ''}${nav('#/tasks', 'tasks', 'Tasks')}<a class="nav ${active === 'alerts' ? 'on' : ''}" href="#/alerts" id="alertlink">Alerts</a>${me.manager_role ? nav('#/staff', 'staff', 'Staff') : ''}
+      <div id="sidechats"></div></div>
+    <div class="foot"><b>${esc(me.display_name)}</b><div class="note">${esc(roles)}</div>
+      <div class="actions"><button id="cpw">Change password</button><button id="so">Sign out</button></div></div></aside>
+    <div class="content"><main>${inner}</main></div></div>`;
+  const box = document.getElementById('appbox');
+  document.getElementById('burger').onclick = () => box.classList.toggle('nav-open');
+  box.querySelector('.side').onclick = (e) => { if (e.target.closest('a')) box.classList.remove('nav-open'); };
+  if (window.chatSidebar) window.chatSidebar();
   if (window.alertBadge) window.alertBadge();
   document.getElementById('cpw').onclick = async () => {
     const r = await ask('Change my password', '<label>New password (at least 8 characters)<input name="p1" type="password" required minlength="8" autocomplete="new-password"></label><label>Type it again<input name="p2" type="password" required minlength="8" autocomplete="new-password"></label>', 'Save password');
