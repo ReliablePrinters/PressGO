@@ -26,7 +26,7 @@
   function jobRow(j, extra = '') {
     return `<a class="job" href="#/job/${j.id}">
       <div><div class="num">#${j.job_number}</div><span class="badge st">${esc(j.lifecycle_status)}</span></div>
-      <div><b>${esc(j.customer_name)}</b> — ${esc(j.description)}<div class="sub">${esc(j.departments?.name || 'No department')} · ${j.assignee ? esc(j.assignee.display_name) : 'Unassigned'}</div></div>
+      <div><b>${esc(j.customer_name)}</b> — ${esc(j.description)}<div class="sub">${esc(j.departments?.name || 'No department')} · ${j.assignee ? window.pgAvatar(j.assignee.display_name, 18) + ' ' + esc(j.assignee.display_name) : 'Unassigned'}</div></div>
       <div>${extra}${j.priority === 'Rush' ? '<span class="badge rush">Rush</span>' : ''}${isLate(j) ? '<span class="badge late">Overdue</span>' : ''}<span class="sub">${due(j.due_at)}</span></div></a>`;
   }
   const taskRow = (t, who) => `<div class="row"><div><b>${esc(t.title)}</b>${t.note ? `<div class="sub">${esc(t.note)}</div>` : ''}
@@ -76,7 +76,7 @@
     const mineOverdue = mine.filter(isLate).length;
     const stat = (n, label, href, hot) => `<a class="stat ${hot && n ? 'hot' : ''}" href="${href}"><b>${n}</b><span>${label}</span></a>`;
 
-    let out = `<h2>Hi ${esc(me.display_name)}</h2><div class="stats">
+    let out = `<h2 class="hi">${window.pgAvatar(me.display_name, 40)} Hi ${esc(me.display_name)}</h2><div class="stats">
       ${stat(mine.length, 'My open jobs', '#/jobs')}${stat(mineOverdue, 'My overdue jobs', '#/jobs', true)}
       ${stat(waiting.length, 'Waiting for me to accept', '#/jobs', true)}${stat(myProblems.length, 'Open problems', '#/jobs', true)}
       ${stat(myTasks.length, 'My tasks', '#/tasks')}${stat(unread, 'Unread chat messages', '#/chat', true)}</div>`;
