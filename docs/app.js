@@ -2,6 +2,8 @@
 const sb = window.supabase.createClient(PRESSGO.url, PRESSGO.key, { db: { schema: 'pressgo' } });
 const $app = document.getElementById('app');
 const dlg = document.getElementById('dlg');
+const RECOVERY = /type=recovery/.test(location.hash);   // opened from a "reset password" email
+let recoveryDone = false;
 let me = null;            // my employee record
 let depts = [];           // active departments
 let myDepts = new Set();  // ids of departments I belong to
@@ -37,6 +39,7 @@ async function call(fn, args) {
 async function start() {
   const { data } = await sb.auth.getSession();
   if (!data.session) return showLogin();
+  if (RECOVERY && !recoveryDone) return showNewPassword();
   await loadMe(data.session);
 }
 async function loadMe(session) {
@@ -61,7 +64,7 @@ function showLogin(msg = '') {
     <form id="lf"><label>Email<input name="email" type="email" required autocomplete="username"></label>
     <label>Password<input name="password" type="password" required minlength="8" autocomplete="current-password"></label>
     <div class="err" id="lerr">${esc(msg)}</div>
-    <div class="actions"><button class="primary" type="submit">Sign in</button><button type="button" id="su">Create login</button></div></form>
+    <div class="actions"><button class="primary" type="submit">Sign in</button><button type="button" id="su">Create login</button><button type="button" id="fp">Forgot password?</button></div></form>
     <p class="note">First time? Choose “Create login”, confirm the email we send you, then sign in.</p></div>`;
   const f = document.getElementById('lf');
   f.onsubmit = async (e) => {
@@ -70,10 +73,32 @@ function showLogin(msg = '') {
     if (error) return (document.getElementById('lerr').textContent = error.message);
     start();
   };
+  document.getElementById('fp').onclick = async () => {
+    const em = f.email.value.trim();
+    if (!em) return (document.getElementById('lerr').textContent = 'Type your email address first, then choose Forgot password.');
+    const { error } = await sb.auth.resetPasswordForEmail(em, { redirectTo: location.href.split('#')[0] });
+    document.getElementById('lerr').textContent = error ? error.message : 'If that email has a login, a reset link is on its way. Check your spam folder too.';
+  };
   document.getElementById('su').onclick = async () => {
     if (!f.reportValidity()) return;
     const { error } = await sb.auth.signUp({ email: f.email.value.trim(), password: f.password.value, options: { emailRedirectTo: location.href.split('#')[0] } });
     document.getElementById('lerr').textContent = error ? error.message : 'Check your email and click the confirmation link, then sign in.';
+  };
+}
+function showNewPassword() {
+  $app.innerHTML = `<div class="center card"><h2>Choose a new password</h2>
+    <form id="pf"><label>New password (at least 8 characters)<input name="p1" type="password" required minlength="8" autocomplete="new-password"></label>
+    <label>Type it again<input name="p2" type="password" required minlength="8" autocomplete="new-password"></label>
+    <div class="err" id="perr"></div><div class="actions"><button class="primary" type="submit">Save password</button></div></form></div>`;
+  const f = document.getElementById('pf');
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    if (f.p1.value !== f.p2.value) return (document.getElementById('perr').textContent = 'The two passwords do not match.');
+    const { error } = await sb.auth.updateUser({ password: f.p1.value });
+    if (error) return (document.getElementById('perr').textContent = error.message);
+    recoveryDone = true;
+    history.replaceState(null, '', location.pathname);
+    start();
   };
 }
 function showBlocked(session, why) {
