@@ -27,7 +27,7 @@
 `;
   document.head.appendChild(css);
 
-  let timer = null, sideTimer = null, rt = null, current = null, convs = [], tch = null, clearTyper = null;
+  let timer = null, sideTimer = null, rt = null, current = null, convs = [], tch = null, clearTyper = null, curType = null;
 
   const color = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 55% 46%)`; };
   const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
@@ -69,8 +69,8 @@
   }
   function ensureRealtime() {
     if (rt) return;
-    rt = sb.channel('chat-all').on('postgres_changes', { event: 'INSERT', schema: 'pressgo', table: 'messages' }, (p) => {
-      if (clearTyper) clearTyper(p.new.author_id);
+    rt = sb.channel('chat-all').on('postgres_changes', { event: '*', schema: 'pressgo', table: 'messages' }, (p) => {
+      if (clearTyper && p.eventType === 'INSERT') clearTyper(p.new.author_id);
       if (p.new.conversation_id === current) loadThread(current); else window.chatSidebar();
     }).subscribe();
   }
@@ -114,9 +114,13 @@
     return (u ? `<a href="${esc(u)}" target="_blank" rel="noopener"><img class="pic" src="${esc(u)}" alt="${esc(m.attachment_name || 'photo')}" loading="lazy"></a>` : '<div class="note">Picture unavailable</div>') + cap;
   };
 
+  const bodyHtml = (m) => (m.hidden_at ? '<i class="gone">This message was deleted</i>' : m.attachment_path ? picHtml(m) : esc(m.body));
+  const delBtn = (m) => (!m.hidden_at && (m.author_id === me.id || (me.manager_role && curType !== 'direct'))
+    ? `<button type="button" class="del" data-del="${m.id}" title="Delete message" aria-label="Delete message"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button>` : '');
+
   async function loadThread(conv) {
     const { data, error } = await sb.from('messages')
-      .select('id,body,sent_at,author_id,attachment_path,attachment_name,author:author_id(display_name)')
+      .select('id,body,sent_at,author_id,attachment_path,attachment_name,hidden_at,author:author_id(display_name)')
       .eq('conversation_id', conv).order('sent_at', { ascending: false }).limit(200);
     const box = document.getElementById('msgs');
     if (!box || current !== conv) return;
@@ -134,8 +138,8 @@
       lastDay = day; lastAuthor = m.author_id; lastT = t;
       const name = m.author_id === me.id ? 'You' : (m.author?.display_name || '?');
       h += cont
-        ? `<div class="msg cont ${m.author_id === me.id ? 'mine' : ''}"><span class="gut">${esc(timeOf(m.sent_at))}</span><div class="bd">${m.attachment_path ? picHtml(m) : esc(m.body)}</div></div>`
-        : `<div class="msg ${m.author_id === me.id ? 'mine' : ''}">${avatar(name === 'You' ? me.display_name : name)}<div><div class="hd"><b>${esc(name)}</b><span class="tm">${esc(timeOf(m.sent_at))}</span></div><div class="bd">${m.attachment_path ? picHtml(m) : esc(m.body)}</div></div></div>`;
+        ? `<div class="msg cont ${m.author_id === me.id ? 'mine' : ''}"><span class="gut">${esc(timeOf(m.sent_at))}</span><div class="bd">${bodyHtml(m)}${delBtn(m)}</div></div>`
+        : `<div class="msg ${m.author_id === me.id ? 'mine' : ''}">${avatar(name === 'You' ? me.display_name : name)}<div><div class="hd"><b>${esc(name)}</b><span class="tm">${esc(timeOf(m.sent_at))}</span></div><div class="bd">${bodyHtml(m)}${delBtn(m)}</div></div></div>`;
       return h;
     }).join('') || '<div class="empty"><h3>No messages yet</h3>Say hello below.</div>';
     if (atBottom || box.dataset.first !== '1') box.scrollTop = box.scrollHeight;
@@ -201,6 +205,7 @@
       } else conv = null;
     }
     current = conv;
+    curType = info ? info.type : null;
     renderSide();
     document.querySelector('.content').classList.add('chatmode');
     const main = document.querySelector('main');
@@ -222,6 +227,14 @@
     ta.focus();
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } };
+    document.getElementById('msgs').onclick = async (e) => {
+      const b = e.target.closest('[data-del]');
+      if (!b) return;
+      const yes = await ask('Delete this message?', '<p>Everyone in this chat will see "This message was deleted". This cannot be undone.</p>', 'Delete');
+      if (!yes) return;
+      try { await call('delete_message', { p_msg: b.dataset.del }); await loadThread(conv); window.chatSidebar(); }
+      catch (err) { alert2(friendly(err)); }
+    };
     // "Ana is typing..." : tiny live signals sent between the people who have this chat open (nothing is saved)
     const typers = new Map(); let lastSent = 0;
     const tbox = document.getElementById('typing');
