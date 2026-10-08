@@ -31,7 +31,8 @@ const ICONS = {
   inbox: 'M22 12h-6l-2 3h-4l-2-3H2 M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z',
   flag: 'M4 22V4 M4 4h13l-2 4 2 4H4',
   swap: 'M7 4 3 8l4 4 M3 8h14 M17 12l4 4-4 4 M21 16H7',
-  user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8'
+  user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8',
+  check: 'M20 6 9 17l-5-5'
 };
 const ic = (n) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[n] || ''}"/></svg>`;
 window.pgIcon = ic;
@@ -49,7 +50,31 @@ function dueCell(j) {
 }
 const emptyState = (icon, title, hint = '') => `<div class="empty-state"><div class="ei">${ic(icon)}</div><b>${esc(title)}</b><span>${esc(hint)}</span></div>`;
 const LOADING = '<div class="skel" aria-busy="true" aria-label="Loading"><i></i><i></i><i></i><i></i></div>';
-window.pgUI = { ic, stBadge, dueCell, emptyState, LOADING };
+function toast(msg, type = 'success') {
+  let box = document.getElementById('toasts');
+  if (!box) { box = document.createElement('div'); box.id = 'toasts'; document.body.appendChild(box); }
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  t.innerHTML = `<span class="ti">${ic(type === 'error' ? 'alert' : 'check')}</span><span class="tm">${esc(msg)}</span><button type="button" class="ghost sm" aria-label="Dismiss">✕</button>`;
+  const close = () => { t.classList.add('out'); setTimeout(() => t.remove(), 180); };
+  t.querySelector('button').onclick = close;
+  box.appendChild(t);
+  while (box.children.length > 3) box.firstChild.remove();
+  setTimeout(close, type === 'error' ? 7000 : 3500);
+}
+function rel(d) {
+  if (!d) return '';
+  const s = Math.max(0, (Date.now() - new Date(d)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  if (s < 172800) return 'Yesterday';
+  if (s < 604800) return `${Math.floor(s / 86400)}d ago`;
+  return new Date(d).toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+window.pgToast = toast;
+window.pgUI = { ic, stBadge, dueCell, emptyState, LOADING, rel };
 
 // ---------------------------------------------------------------- small helpers
 function ask(title, fields, okLabel = 'OK') {
@@ -156,9 +181,9 @@ function shell(active, inner) {
   document.getElementById('cpw').onclick = async () => {
     const r = await ask('Change my password', '<label>New password (at least 8 characters)<input name="p1" type="password" required minlength="8" autocomplete="new-password"></label><label>Type it again<input name="p2" type="password" required minlength="8" autocomplete="new-password"></label>', 'Save password');
     if (!r) return;
-    if (r.p1 !== r.p2) return alert2('The two passwords did not match. Nothing was changed.');
+    if (r.p1 !== r.p2) return toast('The two passwords did not match. Nothing was changed.', 'error');
     const { error } = await sb.auth.updateUser({ password: r.p1 });
-    alert2(error ? error.message : 'Your password has been changed.');
+    error ? toast(error.message, 'error') : toast('Your password has been changed.');
   };
   document.getElementById('so').onclick = async () => { await sb.auth.signOut(); me = null; showLogin(); };
 }
@@ -254,6 +279,7 @@ function viewNew() {
         p_due: new Date(f.due.value).toISOString(), p_priority: f.priority.value, p_dept: f.dept.value,
         p_assignee: f.assignee.value || null, p_artwork_required: !(f.noart && f.noart.checked)
       });
+      toast('Job created.');
       location.hash = '#/job/' + j.id;
     } catch (err) { document.getElementById('ne').textContent = friendly(err); b.disabled = false; }   // entered values are kept
   };
@@ -268,27 +294,29 @@ async function viewStaff() {
   if (error) return shell('staff', `<p class="err">${esc(friendly(error))}</p>`);
   const deptOf = (id) => (mems || []).filter((m) => m.employee_id === id).map((m) => m.department_id);
   const nameOf = (id) => depts.find((d) => d.id === id)?.name || '?';
-  const deptBoxes = (sel) => depts.map((d) => `<label class="inline"><input type="checkbox" name="dept" value="${d.id}" ${sel.includes(d.id) ? 'checked' : ''}> ${esc(d.name)}</label>`).join('');
+  const deptBoxes = (sel) => `<div class="optgrid">${depts.map((d) => `<label class="opt"><input type="checkbox" name="dept" value="${d.id}" ${sel.includes(d.id) ? 'checked' : ''}><span><b>${esc(d.name)}</b></span></label>`).join('')}</div>`;
+  const roleBoxes = (m, f) => `<div class="optgrid"><label class="opt"><input type="checkbox" name="mgr" ${m ? 'checked' : ''}><span><b>Manager</b><small>Full access, including Staff and approvals</small></span></label>
+    <label class="opt"><input type="checkbox" name="fd" ${f ? 'checked' : ''}><span><b>Front Desk</b><small>Creates, edits and assigns jobs</small></span></label></div>`;
   shell('staff', `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Staff</h2><button class="primary" id="addst">+ Add staff</button></div>
-    <div class="err" id="se"></div>
-    <div class="card">${(emps || []).map((e) => `<div class="job" style="grid-template-columns:1fr auto;${e.active ? '' : 'opacity:.6'}">
+    
+    <div class="card">${(emps || []).map((e) => `<div class="job staffrow" style="${e.active ? '' : 'opacity:.6'}">
       <div class="who">${window.pgAvatar(e.display_name, 38)}<div><b>${esc(e.display_name)}</b> <span class="sub">username: ${esc(e.username)}</span>
         <div>${e.manager_role ? '<span class="badge role">Manager</span>' : ''}${e.front_desk ? '<span class="badge role">Front Desk</span>' : ''}${e.active ? '' : '<span class="badge late">Disabled</span>'}${!e.auth_user_id ? '<span class="badge">No login yet</span>' : ''}</div>
         <div class="sub">${deptOf(e.id).map(nameOf).join(', ') || 'No department'}</div></div></div>
       <div class="actions" data-id="${e.id}"><button data-a="edit">Edit…</button><button data-a="pw">Reset password…</button>
         ${e.id === me.id ? '' : `<button data-a="${e.active ? 'off' : 'on'}" class="${e.active ? 'danger' : ''}">${e.active ? 'Disable' : 'Enable'}</button>`}</div></div>`).join('')}</div>
     <p class="note">Usernames are lower-case and cannot be changed later. A disabled person cannot sign in but their history is kept.</p>`);
-  const fail = (e) => (document.getElementById('se').textContent = friendly(e));
+  const fail = (e) => toast(friendly(e), 'error');
   const done = () => viewStaff();
   document.getElementById('addst').onclick = async () => {
-    const r = await ask('Add staff', `<label>Username (letters, numbers, dots, dashes)<input name="username" required minlength="3" maxlength="30" autocapitalize="none" spellcheck="false"></label>
-      <label>Name<input name="name" required maxlength="60"></label>
-      <label>Temporary password (at least 8 characters)<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
-      <p class="note">Tell them their password in person. They can change it with “Change password”.</p>
-      <label class="inline"><input type="checkbox" name="mgr"> Manager</label><label class="inline"><input type="checkbox" name="fd"> Front Desk</label>
-      <div class="note">Departments</div>${deptBoxes([])}`, 'Create login');
+    const r = await ask('Add staff', `<div class="fgroup"><h4>Login</h4>
+      <label>Username<input name="username" required minlength="3" maxlength="30" autocapitalize="none" spellcheck="false" autocomplete="off"><span class="hint">3 to 30 letters, numbers, dots or dashes. It cannot be changed later.</span></label>
+      <label>Name<input name="name" required maxlength="60" autocomplete="off"><span class="hint">Shown to everyone in jobs and chat.</span></label>
+      <label>Temporary password<input name="password" type="password" required minlength="8" autocomplete="new-password"><span class="hint">At least 8 characters. Tell them in person. They can change it with “Change password”.</span></label></div>
+      <div class="fgroup"><h4>Role</h4>${roleBoxes(false, false)}<span class="hint" style="margin:-4px 0 0">Leave both unticked for regular department staff.</span></div>
+      <div class="fgroup"><h4>Departments</h4>${deptBoxes([])}</div>`, 'Create login');
     if (!r) return;
-    try { await adminCall({ action: 'create', username: r.username, display_name: r.name, password: r.password, manager_role: !!r.mgr, front_desk: !!r.fd, department_ids: [].concat(r.dept || []) }); done(); } catch (e) { fail(e); }
+    try { await adminCall({ action: 'create', username: r.username, display_name: r.name, password: r.password, manager_role: !!r.mgr, front_desk: !!r.fd, department_ids: [].concat(r.dept || []) }); toast('Staff member added.'); done(); } catch (e) { fail(e); }
   };
   document.querySelector('.card').onclick = async (ev) => {
     const b = ev.target.closest('button[data-a]'); if (!b) return;
@@ -296,14 +324,14 @@ async function viewStaff() {
     try {
       if (b.dataset.a === 'pw') {
         const r = await ask(`Reset password for ${e.display_name}`, '<label>New password (at least 8 characters)<input name="password" type="password" required minlength="8" autocomplete="new-password"></label><p class="note">Tell them the new password in person.</p>', 'Set password');
-        if (r) { await adminCall({ action: 'set_password', employee_id: id, password: r.password }); await alert2('Password changed.'); }
+        if (r) { await adminCall({ action: 'set_password', employee_id: id, password: r.password }); toast('Password changed.'); }
       } else if (b.dataset.a === 'edit') {
-        const r = await ask(`Edit ${e.display_name}`, `<label>Name<input name="name" value="${esc(e.display_name)}" required maxlength="60"></label>
-          <label class="inline"><input type="checkbox" name="mgr" ${e.manager_role ? 'checked' : ''}> Manager</label><label class="inline"><input type="checkbox" name="fd" ${e.front_desk ? 'checked' : ''}> Front Desk</label>
-          <div class="note">Departments</div>${deptBoxes(deptOf(id))}`, 'Save');
-        if (r) { await adminCall({ action: 'update', employee_id: id, display_name: r.name, manager_role: !!r.mgr, front_desk: !!r.fd, department_ids: [].concat(r.dept || []) }); done(); }
+        const r = await ask(`Edit ${e.display_name}`, `<div class="fgroup"><h4>Details</h4><label>Name<input name="name" value="${esc(e.display_name)}" required maxlength="60"><span class="hint">Username: ${esc(e.username)} (cannot be changed)</span></label></div>
+          <div class="fgroup"><h4>Role</h4>${roleBoxes(e.manager_role, e.front_desk)}</div>
+          <div class="fgroup"><h4>Departments</h4>${deptBoxes(deptOf(id))}</div>`, 'Save');
+        if (r) { await adminCall({ action: 'update', employee_id: id, display_name: r.name, manager_role: !!r.mgr, front_desk: !!r.fd, department_ids: [].concat(r.dept || []) }); toast('Staff details saved.'); done(); }
       } else if (b.dataset.a === 'off' || b.dataset.a === 'on') {
-        await adminCall({ action: 'set_active', employee_id: id, active: b.dataset.a === 'on' }); done();
+        await adminCall({ action: 'set_active', employee_id: id, active: b.dataset.a === 'on' }); toast(b.dataset.a === 'on' ? 'Account enabled.' : 'Account disabled.'); done();
       }
     } catch (err) { fail(err); }
   };
@@ -399,7 +427,7 @@ async function viewJob(id) {
   if (window.jobTasks) window.jobTasks(id);
 
   const run = async (p) => {
-    try { await p; viewJob(id); }
+    try { await p; toast('Saved.'); viewJob(id); }
     catch (e) {
       const m = friendly(e);
       document.getElementById('je').textContent = e.code === '40001' || /version conflict/.test(m) ? 'Someone else just changed this job. It has been refreshed — please check and try again.' : m;

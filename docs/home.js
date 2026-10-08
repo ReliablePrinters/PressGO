@@ -18,12 +18,16 @@
       <div><b>${esc(j.customer_name)}</b> — ${esc(j.description)}<div class="sub">${esc(j.departments?.name || 'No department')} · ${j.assignee ? window.pgAvatar(j.assignee.display_name, 18) + ' ' + esc(j.assignee.display_name) : 'Unassigned'}</div></div>
       <div>${extra}${j.priority === 'Rush' ? '<span class="badge rush">Rush</span>' : ''}${isLate(j) ? '<span class="badge late">Overdue</span>' : ''}${window.pgUI.dueCell(j)}</div></a>`;
   }
-  const taskRow = (t, who) => `<div class="row"><div><b>${esc(t.title)}</b>${t.note ? `<div class="sub">${esc(t.note)}</div>` : ''}
-      <div class="sub">${t.job ? jobLink({ id: t.job_id, ...t.job }) + ' · ' : ''}${who ? esc(who) + ' · ' : ''}<span style="${overdueTask(t) ? 'color:var(--bad)' : ''}">${due(t.due_at)}</span></div></div>
-      ${t.done_at ? '<span class="badge ok">Done</span>' : `<button data-done="${t.id}">Done</button>`}</div>`;
+  const shortDue = (d) => new Date(d).toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const taskRow = (t) => {
+    const late = overdueTask(t);
+    return `<div class="trow ${t.done_at ? 'isdone' : ''} ${late ? 'late' : ''}"><div class="tmain"><b>${esc(t.title)}</b>${t.note ? `<div class="sub">${esc(t.note)}</div>` : ''}
+      <div class="tmeta">${t.job ? `<a class="tag" href="#/job/${t.job_id}">#${t.job.job_number} ${esc(t.job.customer_name)}</a>` : ''}${t.assignee ? `<span class="who2">${window.pgAvatar(t.assignee.display_name, 18)} ${esc(t.assignee.display_name)}</span>` : ''}</div></div>
+      <div class="tside">${t.done_at ? '<span class="badge ok">Done</span>' : `${t.due_at ? `<span class="badge ${late ? 'late' : ''}">${late ? 'Overdue · ' : ''}${esc(shortDue(t.due_at))}</span>` : '<span class="note">No due date</span>'}<button class="sm" data-done="${t.id}">Done</button>`}</div></div>`;
+  };
   function wireTasks(root, redraw) {
     root.querySelectorAll('button[data-done]').forEach((b) => {
-      b.onclick = async () => { b.disabled = true; try { await call('set_task_done', { p_task: b.dataset.done, p_done: true }); } catch (e) { alert2(friendly(e)); } redraw(); };
+      b.onclick = async () => { b.disabled = true; try { await call('set_task_done', { p_task: b.dataset.done, p_done: true }); window.pgToast('Task marked done.'); } catch (e) { window.pgToast(friendly(e), 'error'); } redraw(); };
     });
   }
   const TASK_SELECT = 'id,title,note,due_at,done_at,job_id,assigned_to,created_by,assignee:assigned_to(display_name),job:job_id(job_number,customer_name)';
@@ -37,8 +41,9 @@
     if (!r) return false;
     try {
       await call('create_task', { p_title: r.title, p_note: r.note || null, p_assigned_to: r.who, p_due: r.due ? new Date(r.due).toISOString() : null, p_job: jobId || null });
+      window.pgToast('Task added.');
       return true;
-    } catch (e) { alert2(friendly(e)); return false; }
+    } catch (e) { window.pgToast(friendly(e), 'error'); return false; }
   }
 
   // ---------------------------------------------------------------- Home
@@ -51,7 +56,7 @@
       sb.from('tasks').select(TASK_SELECT).is('done_at', null).order('due_at', { ascending: true, nullsFirst: false }),
       sb.rpc('my_conversations')]);
     const err = jr.error || hr.error || fr.error || tr.error;
-    if (err) return shell('home', `<p class="err">${esc(friendly(err))}</p>`);
+    if (err) return shell('home', `<div class="err-box">${esc(friendly(err))}</div>`);
     const active = (jr.data || []).filter((j) => !isClosed(j));
     const byId = new Map(active.map((j) => [j.id, j]));
     const holds = (hr.data || []).filter((h) => byId.has(h.job_id));
@@ -108,15 +113,16 @@
   window.viewTasks = async function () {
     shell('tasks', window.pgUI.LOADING);
     const { data, error } = await sb.from('tasks').select(TASK_SELECT).order('due_at', { ascending: true, nullsFirst: false }).limit(300);
-    if (error) return shell('tasks', `<p class="err">${esc(friendly(error))}</p>`);
+    if (error) return shell('tasks', `<div class="err-box">${esc(friendly(error))}</div>`);
     const open = (data || []).filter((t) => !t.done_at);
     const mine = open.filter((t) => t.assigned_to === me.id);
     const other = open.filter((t) => t.assigned_to !== me.id);
     const done = (data || []).filter((t) => t.done_at).slice(-15).reverse();
-    shell('tasks', `<div class="toolbar"><h2 style="margin:0">Tasks</h2><span class="spacer"></span><button class="primary" id="nt">${ic('plus')} New task</button></div>
-      <div class="card"><h3>For me</h3><div>${mine.map((t) => taskRow(t)).join('') || '<p class="note">Nothing for you.</p>'}</div></div>
-      ${other.length ? `<div class="card"><h3>${me.manager_role ? 'Everyone else' : 'Tasks I set or can see'}</h3>${other.map((t) => taskRow(t, 'For ' + (t.assignee?.display_name || '?'))).join('')}</div>` : ''}
-      ${done.length ? `<div class="card"><h3>Recently done</h3>${done.map((t) => taskRow(t, t.assignee?.display_name)).join('')}</div>` : ''}`);
+    const group = (title, arr, emptyIcon, emptyTitle, emptyHint) => `<div class="sect"><h3>${title} <span class="count">${arr.length}</span></h3></div><div class="card flush">${arr.length ? arr.map((t) => taskRow(t)).join('') : emptyState(emptyIcon, emptyTitle, emptyHint)}</div>`;
+    shell('tasks', `<div class="pagehead"><div><h2>Tasks</h2><div class="sub">${mine.length} open for you${mine.filter(overdueTask).length ? ` · <b style="color:var(--bad)">${mine.filter(overdueTask).length} overdue</b>` : ''}</div></div><button class="primary" id="nt">${ic('plus')} New task</button></div>
+      ${group('For me', mine, 'tasks', 'You are all caught up', 'Tasks assigned to you will show up here.')}
+      ${other.length ? group(me.manager_role ? 'Everyone else' : 'Tasks I set or can see', other) : ''}
+      ${done.length ? group('Recently done', done) : ''}`);
     wireTasks(document.querySelector('main'), () => window.viewTasks());
     document.getElementById('nt').onclick = async () => { if (await newTask()) window.viewTasks(); };
   };
@@ -127,7 +133,7 @@
     if (!box) return;
     const draw = async () => {
       const { data } = await sb.from('tasks').select(TASK_SELECT).eq('job_id', jobId).order('created_at', { ascending: false });
-      box.innerHTML = `<div class="card"><h3>Tasks <button id="jt" class="sm right">+ Task</button></h3>${(data || []).map((t) => taskRow(t, 'For ' + (t.assignee?.display_name || '?'))).join('') || '<p class="note">No tasks for this job.</p>'}</div>`;
+      box.innerHTML = `<div class="card"><h3>Tasks <button id="jt" class="sm right">+ Task</button></h3>${(data || []).map((t) => taskRow(t)).join('') || '<p class="note">No tasks for this job yet.</p>'}</div>`;
       wireTasks(box, draw);
       document.getElementById('jt').onclick = async () => { if (await newTask(jobId)) draw(); };
     };
@@ -138,10 +144,14 @@
   window.viewAlerts = async function () {
     shell('alerts', window.pgUI.LOADING);
     const { data, error } = await sb.from('notifications').select('id,kind,title,job_id,created_at,read_at').order('created_at', { ascending: false }).limit(100);
-    if (error) return shell('alerts', `<p class="err">${esc(friendly(error))}</p>`);
+    if (error) return shell('alerts', `<div class="err-box">${esc(friendly(error))}</div>`);
     const list = data || [];
-    shell('alerts', `<div class="toolbar"><h2 style="margin:0">Alerts</h2><span class="spacer"></span><button id="mr">Mark all as read</button></div>
-      <div class="card">${list.map((n) => `<div class="row ${n.read_at ? '' : 'unread'}"><div>${n.job_id ? `<a href="#/job/${n.job_id}" data-n="${n.id}">${esc(n.title)}</a>` : esc(n.title)}<div class="sub">${esc(fmt(n.created_at))}</div></div></div>`).join('') || '<p class="note" style="padding:8px 0">No alerts yet. You will see new assignments, handoffs, problems and tasks here.</p>'}</div>`);
+    const KIND = { assigned: ['user', 'Assigned'], handoff: ['swap', 'Handoff'], problem: ['alert', 'Problem'], task: ['tasks', 'Task'], approved: ['check', 'Approved'] };
+    const unreadN = list.filter((n) => !n.read_at).length;
+    const item = (n) => { const k = KIND[n.kind] || ['bell', 'Alert']; const inner = `<span class="ai ${esc(n.kind)}">${ic(k[0])}</span><span class="am"><b>${esc(n.title)}</b><span class="sub">${esc(k[1])}</span></span><span class="at" title="${esc(fmt(n.created_at))}">${esc(window.pgUI.rel(n.created_at))}</span>`;
+      return n.job_id ? `<a class="arow ${n.read_at ? '' : 'unread'}" href="#/job/${n.job_id}" data-n="${n.id}">${inner}</a>` : `<div class="arow ${n.read_at ? '' : 'unread'}">${inner}</div>`; };
+    shell('alerts', `<div class="pagehead"><div><h2>Alerts</h2><div class="sub">${unreadN ? `${unreadN} new` : 'You are all caught up'}</div></div><button id="mr">Mark all as read</button></div>
+      <div class="card flush">${list.length ? list.map(item).join('') : emptyState('bell', 'No alerts yet', 'You will see new assignments, handoffs, problems and tasks here.')}</div>`);
     document.getElementById('mr').onclick = async () => { await call('mark_alerts_read', {}); window.viewAlerts(); };
     document.querySelectorAll('a[data-n]').forEach((a) => { a.onclick = () => { call('mark_alerts_read', { p_ids: [a.dataset.n] }); }; });
     await call('mark_alerts_read', {}).catch(() => {});
