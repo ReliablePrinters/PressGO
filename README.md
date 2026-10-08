@@ -32,7 +32,7 @@ First manager: create one user in Supabase -> Authentication -> Users (email `na
 ## Job rules
 - New -> Queued -> In Production -> Finishing -> Ready for Collection -> Collected (Cancelled by a manager with a reason).
 - Backward moves, cancel/reopen, deadline/priority changes need a reason and appear in History.
-- A job cannot start without artwork a manager approved ("Approved for Print"), unless a manager marked artwork not required.
+- A job cannot start without artwork Front Desk or a manager approved ("Approved for Print"), unless a manager marked artwork not required.
 - Files: private bucket `job-files`, 100 MB max, program files blocked, never overwritten (each upload is a new version).
 - An open problem blocks the job moving forward until resolved with a note.
 - A handoff sends a job to another department; they must accept it (the accepter becomes owner).
