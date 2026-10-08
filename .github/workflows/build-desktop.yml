@@ -1,0 +1,134 @@
+name: Build Windows desktop app
+
+# Manual only. Nothing here runs on push, pull request or schedule, and nothing is
+# published unless "publish" is ticked when the run is started.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a GitHub Release (leave unticked for a dry run that only builds)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-desktop
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build installer (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Read version from package.json
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Make the app icon from the existing PressGO manifest
+        run: |
+          node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('../docs/manifest.webmanifest','utf8'));const i=m.icons.find(x=>x.sizes==='512x512');if(!i||!i.src.startsWith('data:image/png;base64,'))throw new Error('512px PNG icon not found');fs.mkdirSync('build',{recursive:true});fs.writeFileSync('build/icon.png',Buffer.from(i.src.split(',')[1],'base64'));console.log('icon bytes',fs.statSync('build/icon.png').size)"
+
+      - name: Show tool versions (information only)
+        run: |
+          node -v
+          npm -v
+          echo "Latest electron on npm: $(npm view electron version || true)"
+          echo "Latest electron-builder on npm: $(npm view electron-builder version || true)"
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Build installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist
+
+      - name: Check files and make checksums
+        run: |
+          cd dist
+          ls -l
+          for f in PressGO-Setup.exe PressGO-Portable.zip; do
+            test -s "$f" || { echo "Missing $f"; exit 1; }
+          done
+          sha256sum PressGO-Setup.exe PressGO-Portable.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          {
+            echo "### PressGO desktop build v${{ steps.ver.outputs.version }}"
+            echo ""
+            echo "| File | Bytes |"
+            echo "|---|---|"
+            echo "| PressGO-Setup.exe | $(stat -c%s PressGO-Setup.exe) |"
+            echo "| PressGO-Portable.zip | $(stat -c%s PressGO-Portable.zip) |"
+            echo ""
+            echo '```'
+            cat SHA256SUMS.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pressgo-desktop-windows
+          path: |
+            desktop/dist/PressGO-Setup.exe
+            desktop/dist/PressGO-Portable.zip
+            desktop/dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: ${{ inputs.publish && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pressgo-desktop-windows
+          path: dist
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"; exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"; exit 1
+          fi
+          cat > notes.md <<'EOF'
+          Download **PressGO-Setup.exe**, run it, and follow the steps.
+
+          Windows may show "Windows protected your PC" because this app is not code-signed yet.
+          Click **More info**, then **Run anyway**.
+
+          PressGO needs an internet connection. The app opens the live PressGO site and contains
+          no keys, no staff data and no copy of the database. **PressGO-Portable.zip** is the same
+          app as a plain folder (unzip and run PressGO.exe). **SHA256SUMS.txt** lets you check the downloads.
+          EOF
+          gh release create "$TAG" \
+            dist/PressGO-Setup.exe dist/PressGO-Portable.zip dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "PressGO v${VERSION}" --notes-file notes.md
