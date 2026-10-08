@@ -234,7 +234,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px}
 }
 
 /* compact job rows used on Home */
-.job{display:grid;grid-template-columns:78px 1fr auto;gap:12px;align-items:center;padding:11px 12px;border-radius:var(--r-sm);color:inherit;border-bottom:1px solid var(--line);transition:background .1s}
+.job{display:grid;grid-template-columns:118px 1fr auto;gap:12px;align-items:center;padding:11px 12px;border-radius:var(--r-sm);color:inherit;border-bottom:1px solid var(--line);transition:background .1s}
 .job:last-child{border-bottom:0}
 a.job:hover{background:color-mix(in srgb,var(--brand) 6%,var(--card));text-decoration:none}
 .job .num{font-weight:700;margin-bottom:3px}.job .sub{color:var(--mut);font-size:12.5px}
