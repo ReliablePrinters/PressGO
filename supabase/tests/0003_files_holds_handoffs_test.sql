@@ -79,10 +79,10 @@ select pg_temp.as_user('10000000-0000-0000-0000-0000000000a3');
 select pg_temp.expect_fail($$select transition_job((select a from j), pg_temp.v((select a from j)), 'In Production')$$, 'started without approved artwork');
 select pg_temp.expect_fail($$select approve_artwork((select a from j), pg_temp.v((select a from j)), (select id from job_files where file_name='final.pdf'))$$, 'staff approved artwork');
 select pg_temp.as_user('10000000-0000-0000-0000-0000000000a2');
-select pg_temp.expect_fail($$select approve_artwork((select a from j), pg_temp.v((select a from j)), (select id from job_files where file_name='final.pdf'))$$, 'front desk approved artwork');
+select pg_temp.ok($$select approve_artwork((select a from j), pg_temp.v((select a from j)), (select id from job_files where file_name='final.pdf'))$$, 'front desk approves artwork (0014)');
 select pg_temp.as_user('10000000-0000-0000-0000-0000000000a1');
 select pg_temp.ok($$select approve_artwork((select a from j), pg_temp.v((select a from j)), (select id from job_files where file_name='final.pdf'))$$, 'manager approves');
-select pg_temp.expect_count($$select 1 from audit_events where action='job.artwork_approved' and reason like 'Approved for Print: final.pdf%'$$, 1, 'approval not in history');
+select pg_temp.expect_count($$select 1 from audit_events where action='job.artwork_approved' and reason like 'Approved for Print: final.pdf%'$$, 2, 'approvals not in history');
 select pg_temp.as_user('10000000-0000-0000-0000-0000000000a3');
 select pg_temp.ok($$select transition_job((select a from j), pg_temp.v((select a from j)), 'In Production')$$, 'owner starts after approval');
 

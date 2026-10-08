@@ -10,7 +10,7 @@
 
 ## Day-one test (run once with two people)
 1. Front desk: **+ New job**, send it to a department. Another person in that department sees it; a different department does not.
-2. Department person: open the job, upload artwork. Manager: **Approve for Print**.
+2. Department person: open the job, upload artwork. Front Desk or Manager: **Approve for Print**.
 3. Assign the job to one person: the rest of the department no longer sees it. That person gets an **Alert**.
 4. Start it, report a problem (it blocks moving forward), resolve it, hand off to another department and accept it.
 5. Send a private message to one person and to a whole department; check the others cannot see it.

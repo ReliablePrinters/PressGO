@@ -61,17 +61,18 @@ Apply these files from `supabase/migrations/` **in this order, each exactly once
 | 11 | `0011_approve_pictures.sql` | Approving pictures |
 | 12 | `0012_break_status.sql` | "On break" status |
 | 13 | `0013_close_direct_writes.sql` | Removes direct table writes for signed-in and anonymous users; all changes go through the checked functions |
+| 14 | `0014_artwork_approval_roles.sql` | Artwork approval ("Approved for Print") is limited to Front Desk and managers; withdrawing approval stays manager-only |
 
 **There is no migration-tracking table.** Nothing in the database records which files were applied. Keep a note of the last file you ran.
 
-**Proof the files alone rebuild the schema (VERIFIED):** applying 0001–0013 to an empty PostgreSQL 16 database (with `supabase/tests/local_stub.sql` standing in for Supabase's `auth`/`storage`) produces exactly what the live database has: 17 tables, 29 policies, 20 triggers, 48 functions, row-level security on every table, 4 departments, and no write privileges for the `authenticated` / `anon` roles.
+**Proof the files alone rebuild the schema (VERIFIED):** applying 0001–0014 to an empty PostgreSQL 16 database (with `supabase/tests/local_stub.sql` standing in for Supabase's `auth`/`storage`) produces exactly what the live database has: 17 tables, 29 policies, 20 triggers, 48 functions, row-level security on every table, 4 departments, and no write privileges for the `authenticated` / `anon` roles.
 
 ---
 
 ## 3. Supabase project setup
 
 1. Create a new project (any name; region close to your users; set a strong database password and store it in a password manager, **not** in the repo).
-2. Apply migrations 0001–0013 (section 2).
+2. Apply migrations 0001–0014 (section 2).
 3. Do the dashboard settings in sections 4–7. Several are **not** created by migrations (section 13 lists them).
 4. Make sure the Data API exposes the `pressgo` schema (section 13). Without it the app cannot reach any table or function.
 
@@ -264,7 +265,7 @@ The live database is PostgreSQL 17.11, so pg_dump should be version 17 or newer 
 
 Steps 1 to 7 were run on a scratch **PostgreSQL 16** on 2026-10-08. The live database is **PostgreSQL 17.11**; **PostgreSQL 17 restore behavior is NOT VERIFIED.** Steps 8 and 9 and everything on a real Supabase project are **UNTESTED**. Rehearse only in a scratch database or a separate scratch project, **never in the live project**.
 
-1. Create the empty database / new project and run migrations 0001-0013 in order. VERIFIED locally (PostgreSQL 16): gives 17 tables, 29 policies, 20 triggers, 48 functions, 0 tables without RLS.
+1. Create the empty database / new project and run migrations 0001-0014 in order. VERIFIED locally (PostgreSQL 16): gives 17 tables, 29 policies, 20 triggers, 48 functions, 0 tables without RLS.
 2. **Remove the seed rows the migrations create.** They have random ids that clash with the backup. Delete in this order: `pressgo.conversations`, `pressgo.departments`, `pressgo.audit_events`. VERIFIED locally. The audit delete is blocked by the immutability trigger, so it needs step 3.
 3. **Switch triggers off for the load.** See the warning box below. VERIFIED locally only, as a superuser.
 4. Load the tables in this order: `departments`, `employees`, `department_memberships`, `jobs`, `conversations`, `conversation_members`, `conversation_reads`, `messages`, `employee_status`, `audit_events`. VERIFIED locally with `insert ... select ... from jsonb_populate_recordset(...)` from the JSON backup, with these exceptions:

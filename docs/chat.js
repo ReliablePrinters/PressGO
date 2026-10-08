@@ -2,6 +2,32 @@
 // PressGO chat, Slack-style: channels and private messages live in the left sidebar, the conversation fills the page.
 // Uses helpers from app.js (sb, me, depts, esc, shell, ask, call, alert2, friendly).
 (function () {
+  // ---- in-app picture viewer: shared by chat pictures (here) and image files on a job (app.js). Never navigates, never opens a tab.
+  window.pgViewImage = function (url, alt) {
+    if (!url) return;
+    if (document.querySelector('dialog.lightbox[open]')) return;   // already showing one (e.g. a double tap)
+    const dlg = document.createElement('dialog');
+    dlg.className = 'lightbox';
+    dlg.setAttribute('aria-label', alt ? 'Picture: ' + alt : 'Picture');
+    dlg.innerHTML = '<div class="lb-stage"><span class="lb-msg">Loading…</span></div><button type="button" class="lb-close" aria-label="Close picture">✕ Close</button>';
+    const stage = dlg.querySelector('.lb-stage');
+    const img = new Image();
+    img.alt = alt || 'Picture'; img.draggable = false; img.hidden = true;
+    img.onload = () => { stage.querySelector('.lb-msg')?.remove(); img.hidden = false; };
+    img.onerror = () => { const m = stage.querySelector('.lb-msg'); if (m) m.textContent = 'This picture could not be loaded.'; };
+    stage.appendChild(img);
+    img.src = url;
+    // click anywhere that is not the picture itself (backdrop, empty stage) closes; Escape is handled by the dialog
+    const openedAt = Date.now();   // ignore the tail of the tap that opened it (a double-tap must not flash it shut)
+    dlg.addEventListener('click', (e) => { if (e.target !== img && !e.target.closest('.lb-close') && Date.now() - openedAt > 350) dlg.close(); });
+    dlg.querySelector('.lb-close').addEventListener('click', () => dlg.close());
+    dlg.addEventListener('close', () => { dlg.remove(); if (!document.querySelector('dialog.lightbox')) document.documentElement.style.overflow = ''; });
+    document.body.appendChild(dlg);
+    document.documentElement.style.overflow = 'hidden';
+    dlg.showModal();
+    dlg.querySelector('.lb-close').focus();
+  };
+
   const css = document.createElement('style');
   css.textContent = `
 .thread{flex:1;min-width:0;display:flex;flex-direction:column;height:100%;background:var(--bg)}
@@ -24,6 +50,14 @@
 .thread form.send button{height:44px;border-radius:12px}
 .thread .empty{margin:auto;text-align:center;color:var(--mut);padding:30px}
 .thread .empty h3{color:var(--ink);margin:0 0 6px}
+.thread .th-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.thread .th-ic{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;background:color-mix(in srgb,var(--brand) 13%,transparent);color:var(--brand);font-weight:800}
+.thread .tt{font-size:17px}.thread .th-l .sub{margin-top:3px}
+.thread .th-job{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:var(--r-sm);background:var(--btn);color:#fff;font-weight:600;font-size:13.5px;white-space:nowrap}
+.thread .th-job:hover{background:var(--btn-h);text-decoration:none}
+.pstat{font-weight:600}.pstat:before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:#8b93a7}
+.pstat.st-on:before,.pstat.on:before{background:#22c55e}.pstat.st-break:before{background:#f5a524}
+.msk{display:grid;gap:18px;padding:12px 0}.msk i{display:block;height:44px;border-radius:12px;max-width:70%;background:linear-gradient(90deg,color-mix(in srgb,var(--mut) 10%,var(--bg)) 25%,color-mix(in srgb,var(--mut) 20%,var(--bg)) 50%,color-mix(in srgb,var(--mut) 10%,var(--bg)) 75%);background-size:200% 100%;animation:pgsk 1.3s linear infinite}.msk i:nth-child(2){max-width:50%}
 `;
   document.head.appendChild(css);
 
@@ -65,6 +99,8 @@
       a.classList.add(stClass(a.dataset.n));
       a.title = a.dataset.n + ' - ' + stText(a.dataset.n);
     });
+    document.querySelectorAll('.pstat[data-n]').forEach((e) => { const c = stClass(e.dataset.n); e.className = 'pstat ' + c; e.textContent = stText(e.dataset.n); });
+    const on = document.getElementById('onl'); if (on) { on.textContent = `${onlineNames.size} online`; on.className = 'pstat ' + (onlineNames.size ? 'on' : 'st-off'); }
     const b = document.getElementById('brk');
     if (b && me) { const on = breakNames.has(me.display_name); b.textContent = on ? 'Back from break' : 'Take a break'; b.className = on ? 'brk on' : 'brk'; }
   }
@@ -105,7 +141,7 @@
       ${dms.map((c) => item(c, '')).join('') || '<div class="note" style="padding:4px 10px">No private messages yet.</div>'}`;
     box.querySelector('#sidenew').onclick = newDirect;
     box.querySelector('#brk').onclick = async () => {
-      try { await call('set_break', { p_on: !breakNames.has(me.display_name) }); await loadBreaks(); } catch (e) { alert2(friendly(e)); }
+      try { await call('set_break', { p_on: !breakNames.has(me.display_name) }); await loadBreaks(); } catch (e) { window.pgToast(friendly(e), 'error'); }
     };
     paintStatus();
   }
@@ -154,7 +190,7 @@
   const picHtml = (m) => {
     const u = picUrls[m.attachment_path]?.url;
     const cap = m.body && m.body !== 'Photo' ? `<div>${esc(m.body)}</div>` : '';
-    return (u ? `<a href="${esc(u)}" target="_blank" rel="noopener"><img class="pic" src="${esc(u)}" alt="${esc(m.attachment_name || 'photo')}" loading="lazy"></a>` : '<div class="note">Picture unavailable</div>') + cap;
+    return (u ? `<img class="pic" src="${esc(u)}" alt="${esc(m.attachment_name || 'photo')}" loading="lazy" role="button" tabindex="0" data-view="${esc(u)}" title="Click to enlarge">` : '<div class="note">Picture unavailable</div>') + cap;
   };
 
   const canApprove = () => me.manager_role || me.front_desk;
@@ -206,7 +242,7 @@
     const opts = '<option value="">Pick a department…</option>' + depts.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('') + '<option value="all">All staff</option>';
     const go = async (ids) => {
       dlg.close();
-      try { location.hash = '#/chat/' + (await call('start_chat', { p_people: ids })); } catch (e) { alert2(friendly(e)); }
+      try { location.hash = '#/chat/' + (await call('start_chat', { p_people: ids })); } catch (e) { window.pgToast(friendly(e), 'error'); }
     };
     const asked = ask('New private message',
       `<label>Department<select name="grp">${opts}</select></label><div id="pp" class="note">Pick a department. Then click one person to message just them, or message everyone in it. Only you and the people you message can see it.</div>`, 'Cancel');
@@ -267,26 +303,36 @@
       document.getElementById('newdm').onclick = newDirect;
       return;
     }
-    const sub = info.type === 'direct' ? 'Private — only the people in this chat can see it'
-      : info.type === 'job' ? `<a href="#/job/${info.job_id}">Open this job</a>`
-      : info.type === 'department' ? 'Department channel — this department and managers' : 'Everyone';
-    main.innerHTML = `<div class="thread"><div class="th-head"><div class="ttl">${info.type === 'direct' ? avatar(info.name, 28) : ''}${esc((['general', 'urgent', 'department'].includes(info.type) ? '# ' : '') + (info.name || ''))}</div><div class="sub">${sub}</div></div>
-      <div class="msgs" id="msgs"><p class="note">Loading…</p></div>
+    const isChan = ['general', 'urgent', 'department'].includes(info.type);
+    const sub = info.type === 'direct' ? 'Private conversation — only the people in this chat can see it'
+      : info.type === 'job' ? 'Everyone working on this job'
+      : info.type === 'department' ? 'Department channel — this department and managers' : info.type === 'urgent' ? 'Urgent updates for everyone' : 'Everyone at PressGO';
+    const who = info.type === 'direct' ? `<span class="pstat" data-n="${esc(info.name)}"></span>` : `<span class="pstat on" id="onl"></span>`;
+    main.innerHTML = `<div class="thread"><div class="th-head"><div class="th-l"><div class="ttl">${info.type === 'direct' ? avatar(info.name, 34) : `<span class="th-ic">${isChan ? '#' : window.pgIcon('jobs')}</span>`}<span class="tt">${esc(info.name || '')}</span></div><div class="sub">${sub} · ${who}</div></div>${info.type === 'job' && info.job_id ? `<a class="th-job" href="#/job/${info.job_id}">${window.pgIcon('jobs')} Open job</a>` : ''}</div>
+      <div class="msgs" id="msgs"><div class="msk" aria-busy="true" aria-label="Loading messages"><i></i><i></i><i></i></div></div>
       <div class="typing" id="typing" hidden></div>
       <div class="pend" id="pend" hidden></div>
       <form class="send" id="sendf"><button type="button" class="clip" id="clip" title="Add a picture" aria-label="Add a picture"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button><input type="file" id="pic" accept="image/*" hidden><textarea name="body" maxlength="4000" rows="1" placeholder="Message ${esc(info.name || '')}"></textarea><button class="primary" type="submit">Send</button></form></div>`;
     await loadThread(conv);
+    paintStatus();
     const f = document.getElementById('sendf'), ta = f.body;
     ta.focus();
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } };
-    document.getElementById('msgs').onclick = async (e) => {
+    const msgsEl = document.getElementById('msgs');
+    msgsEl.onkeydown = (e) => {
+      const pv = e.target.closest?.('[data-view]');
+      if (pv && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); window.pgViewImage(pv.dataset.view, pv.getAttribute('alt')); }
+    };
+    msgsEl.onclick = async (e) => {
+      const pv = e.target.closest('[data-view]');
+      if (pv) { e.preventDefault(); window.pgViewImage(pv.dataset.view, pv.getAttribute('alt')); return; }
       const ap = e.target.closest('[data-appr],[data-unappr]');
       if (ap) {
         const un = !!ap.dataset.unappr;
         if (un && !(await ask('Take back approval?', '<p>The picture will go back to "Waiting for approval".</p>', 'Take back'))) return;
         try { await call('approve_picture', { p_msg: un ? ap.dataset.unappr : ap.dataset.appr, p_approve: !un }); await loadThread(conv); window.chatSidebar(); }
-        catch (err) { alert2(friendly(err)); }
+        catch (err) { window.pgToast(friendly(err), 'error'); }
         return;
       }
       const b = e.target.closest('[data-del]');
@@ -294,7 +340,7 @@
       const yes = await ask('Delete this message?', '<p>Everyone in this chat will see "This message was deleted". This cannot be undone.</p>', 'Delete');
       if (!yes) return;
       try { await call('delete_message', { p_msg: b.dataset.del }); await loadThread(conv); window.chatSidebar(); }
-      catch (err) { alert2(friendly(err)); }
+      catch (err) { window.pgToast(friendly(err), 'error'); }
     };
     // "Ana is typing..." : tiny live signals sent between the people who have this chat open (nothing is saved)
     const typers = new Map(); let lastSent = 0;
@@ -329,9 +375,9 @@
     };
     const take = async (file) => {
       if (!file) return;
-      if (!file.type.startsWith('image/')) { alert2('Only pictures can be sent here.'); return; }
+      if (!file.type.startsWith('image/')) { window.pgToast('Only pictures can be sent here.', 'error'); return; }
       const small = await shrink(file);
-      if (small.size > 10 * 1024 * 1024) { alert2('That picture is too big (10 MB at most).'); return; }
+      if (small.size > 10 * 1024 * 1024) { window.pgToast('That picture is too big (10 MB at most).', 'error'); return; }
       if (pending) URL.revokeObjectURL(pending.preview);
       pending = { file: small, preview: URL.createObjectURL(small) };
       showPend(); ta.focus();
@@ -355,7 +401,7 @@
           URL.revokeObjectURL(pending.preview); pending = null; showPend();
         } else await call('send_message', { p_conv: conv, p_body: text });
         ta.value = ''; ta.style.height = '44px'; await loadThread(conv); window.chatSidebar();
-      } catch (err) { alert2(friendly(err)); }
+      } catch (err) { window.pgToast(friendly(err), 'error'); }
       btn.disabled = false;
       ta.focus();
     };
