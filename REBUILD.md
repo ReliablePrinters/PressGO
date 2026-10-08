@@ -233,29 +233,89 @@ Automated checks from a terminal (local PostgreSQL 16 or newer, no Supabase need
 
 ---
 
-## 12. Future export and recovery procedure (UNTESTED — rehearse first)
+## 12. Export and recovery procedure
 
-The Free plan has **no automatic backups** (VERIFIED). The live database is the only copy of the data. Until a paid plan with backups is in place, take an export regularly (for example weekly) and keep it **outside Supabase and outside this repository**.
+Labels: **VERIFIED** = actually done and checked. **UNTESTED** = written down but never run. **NOT VERIFIED** = not checked.
 
-**Take an export** (needs the database password from the dashboard's *Connect* button; use the session-pooler connection string and keep it in an environment variable, never in a file you commit):
+**Overall status of the restore procedure: PARTIALLY VERIFIED — local PostgreSQL 16 only.** Only the database part (12.3, steps 1 to 7) was rehearsed, on a scratch PostgreSQL 16 on 2026-10-08. Nothing has been restored on Supabase. The live database is **PostgreSQL 17.11**, so PostgreSQL 17 restore behavior is **NOT VERIFIED**.
+
+**Backups.** The 2026-10-08 backup was created **manually** (dashboard-only method, 12.1). Whether Supabase provides automatic backups for this project is **NOT VERIFIED here**: it depends on the current Supabase plan, which can change. Confirm automatic backup coverage against the current Supabase plan and the dashboard before relying on it, and until then treat the live database as the only copy of the data. Keep every export **outside Supabase and outside this repository** (this repository is public), and repeat it regularly (for example weekly).
+
+### 12.1 Taking a backup
+
+**Dashboard-only method (VERIFIED, done manually on 2026-10-08).** No password, no pg_dump, nothing changed. Read each non-empty `pressgo` table with the SQL editor and save it as JSON and CSV; list the Auth users (id, email, dates, flags, never hashes); download each Storage file and compare its size and MD5 with the Storage `etag`; record the dashboard settings; download the GitHub main ZIP; write SHA-256 hashes and a MANIFEST. The 2026-10-08 backup of 10 tables (64 rows), 4 Auth users and 3 chat files was taken this way.
+
+**pg_dump method (UNTESTED, never used).** Needs the database password from the dashboard's *Connect* button; use the session-pooler connection string and keep it in an environment variable, never in a file you commit:
 
 ```bash
 pg_dump "$DATABASE_URL" --schema=pressgo --no-owner --no-privileges -Fc -f pressgo_$(date +%F).dump
 ```
 
-What the dump does **not** contain:
+The live database is PostgreSQL 17.11, so pg_dump should be version 17 or newer (the sandbox used for the rehearsal only had version 16). Using it and restoring from its output are both UNTESTED.
 
-- **Logins.** `employees.auth_user_id` is not a foreign key, so employee rows survive a restore, but the Auth accounts (passwords) live in the `auth` schema. Plan to recreate each login with the **Staff** screen or `admin-users`, then re-link by email:
+### 12.2 What a backup does not contain
 
-  ```sql
-  update pressgo.employees e set auth_user_id = u.id
-    from auth.users u where lower(u.email) = lower(e.email) and e.auth_user_id is distinct from u.id;
-  ```
-
-- **Files.** Storage objects (job artwork, chat pictures) are files, not rows. The database only holds their paths (`job_files`, `messages.attachment_path`). Download both buckets separately (dashboard, or S3-compatible access).
+- **Logins.** Password hashes and sessions live in the `auth` schema and are not exported. Recreate each login with the **Staff** screen or `admin-users` (new passwords), then re-link by email (12.3, step 7).
+- **Files.** The database contains references/metadata for stored files, while the actual Storage objects are separate files and must be backed up separately. Download both buckets.
 - **Dashboard settings.** Re-apply sections 4 to 7 and 13 by hand.
+- Empty tables, sequence values, Auth email templates.
 
-**Restore:** create a new project, run migrations 0001–0013, apply the dashboard settings, load the data, re-create and re-link logins, upload the files, run section 11. **Open questions the rehearsal must answer**: the migrations already insert seed rows (departments, channels), which a data-only restore will collide with; the immutability and "last manager" triggers may block a bulk load; and which `pg_restore` options work for a non-superuser on Supabase. Do the rehearsal in a **separate scratch project or a local PostgreSQL, never in the live project**.
+### 12.3 Restore — PARTIALLY VERIFIED — local PostgreSQL 16 only
+
+Steps 1 to 7 were run on a scratch **PostgreSQL 16** on 2026-10-08. The live database is **PostgreSQL 17.11**; **PostgreSQL 17 restore behavior is NOT VERIFIED.** Steps 8 and 9 and everything on a real Supabase project are **UNTESTED**. Rehearse only in a scratch database or a separate scratch project, **never in the live project**.
+
+1. Create the empty database / new project and run migrations 0001-0013 in order. VERIFIED locally (PostgreSQL 16): gives 17 tables, 29 policies, 20 triggers, 48 functions, 0 tables without RLS.
+2. **Remove the seed rows the migrations create.** They have random ids that clash with the backup. Delete in this order: `pressgo.conversations`, `pressgo.departments`, `pressgo.audit_events`. VERIFIED locally. The audit delete is blocked by the immutability trigger, so it needs step 3.
+3. **Switch triggers off for the load.** See the warning box below. VERIFIED locally only, as a superuser.
+4. Load the tables in this order: `departments`, `employees`, `department_memberships`, `jobs`, `conversations`, `conversation_members`, `conversation_reads`, `messages`, `employee_status`, `audit_events`. VERIFIED locally with `insert ... select ... from jsonb_populate_recordset(...)` from the JSON backup, with these exceptions:
+   - leave out `employees.username` (generated column, recomputed from the email);
+   - insert `audit_events` with `overriding system value` (generated-always id).
+5. **Reset the counters** after loading. VERIFIED locally:
+
+   ```sql
+   select setval('pressgo.job_number_seq', (select max(job_number) from pressgo.jobs));
+   select setval(pg_get_serial_sequence('pressgo.audit_events','id'), (select max(id) from pressgo.audit_events));
+   ```
+
+   Without this, the next job gets a number that already exists.
+6. Triggers return to normal when the transaction ends. VERIFIED locally: all 20 enabled afterwards. Then run the checks in section 11.
+7. Recreate each login, then re-link by email. VERIFIED locally against fake users only (it adds one audit row per employee changed):
+
+   ```sql
+   update pressgo.employees e set auth_user_id = u.id
+     from auth.users u where lower(u.email) = lower(e.email) and e.auth_user_id is distinct from u.id;
+   ```
+
+   The restored employees keep the OLD `auth_user_id` values until this runs, so nobody can sign in meaningfully before it.
+8. Upload the Storage files to the same bucket and path, and compare size and MD5 with the backup's `storage-objects.txt`. UNTESTED.
+9. Re-apply the dashboard settings and redeploy the `admin-users` function and the app. UNTESTED.
+
+#### Trigger bypass (step 3): NOT VERIFIED on Supabase
+
+> **`session_replication_role` has NOT been verified on Supabase.**
+> - **What was verified:** `set local session_replication_role = replica;` inside one transaction worked on a **local PostgreSQL 16 scratch server, as a superuser**.
+> - **What failed:** a plain non-superuser was refused in the same sandbox (`permission denied to set parameter "session_replication_role"`).
+> - **What is unknown (NOT VERIFIED):** whether Supabase allows its `postgres` role to set it, on PostgreSQL 17.11 or any other version.
+> - **Untried alternative (UNTESTED):** `alter table ... disable trigger user` on each table, as the table owner.
+> - **Rule:** test this **only in a separate scratch Supabase project, never in the live database.** Do not try it against the live project to find out whether it works.
+
+### 12.4 What has and has not been rehearsed
+
+| Item | Status |
+|---|---|
+| Migrations rebuild the schema (17/29/20/48) | VERIFIED locally (PostgreSQL 16 only) |
+| Load all 10 tables from the JSON backup (64 rows, row-for-row match) | VERIFIED locally (PostgreSQL 16 only) |
+| Seed clash, audit immutability, generated columns, counter reset | VERIFIED locally (problems found and fixed in steps 2-5) |
+| Login re-link SQL | VERIFIED locally against fake users (PostgreSQL 16 only) |
+| PostgreSQL 17 / 17.11 restore behavior | NOT VERIFIED (rehearsal used PostgreSQL 16; live is 17.11) |
+| `session_replication_role` on Supabase (`postgres` role) | NOT VERIFIED |
+| `alter table ... disable trigger user` as an alternative | UNTESTED |
+| Real Auth accounts, passwords, Staff screen / admin-users | UNTESTED |
+| Storage restore (3 chat images, policies, paths in the app) | UNTESTED |
+| Realtime, dashboard settings, Edge Function, deployed app | UNTESTED |
+| Restore from the CSV files | UNTESTED |
+| pg_dump export and `pg_restore` | UNTESTED |
+| Automatic Supabase backup coverage for this project | NOT VERIFIED (confirm against the current plan) |
 
 ---
 
