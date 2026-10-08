@@ -1,0 +1,46 @@
+{
+  "name": "pressgo-desktop",
+  "productName": "PressGO",
+  "version": "1.0.0",
+  "description": "PressGO desktop app for Windows. Opens the live PressGO site.",
+  "main": "main.js",
+  "author": "Reliable Printers",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "37.2.0",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "com.reliableprinters.pressgo",
+    "productName": "PressGO",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "package.json"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "icon": "build/icon.png",
+      "artifactName": "PressGO-Portable.${ext}",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "zip", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "PressGO-Setup.${ext}"
+    }
+  }
+}
