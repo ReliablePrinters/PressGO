@@ -96,4 +96,18 @@ select pg_temp.ok($$select pg_temp.try_approve('art1.pdf')$$, 'Front Desk approv
 select pg_temp.expect_fail($$select withdraw_artwork_approval((select id from jobs where customer_name='Acme'), pg_temp.v((select id from jobs where customer_name='Acme')), 'oops')$$, 'Front Desk withdrew approval (withdrawal is still manager-only)');
 select pg_temp.as_user('10000000-0000-0000-0000-0000000000a1');
 select pg_temp.ok($$select withdraw_artwork_approval((select id from jobs where customer_name='Acme'), pg_temp.v((select id from jobs where customer_name='Acme')), 'wrong file')$$, 'manager withdraws approval');
+
+-- ===== the migration is safe to run again, and the call rights are exactly right
+reset role;
+\ir ../migrations/0014_artwork_approval_roles.sql
+create or replace function pg_temp.assert_true(cond boolean, label text) returns void language plpgsql as $$
+begin if cond is not true then raise exception 'FAILED: %', label; end if; end $$;
+select pg_temp.assert_true(not has_function_privilege('public', 'pressgo.approve_artwork(uuid,integer,uuid)', 'execute'), 'PUBLIC must NOT be granted EXECUTE on approve_artwork');
+select pg_temp.assert_true(not has_function_privilege('anon', 'pressgo.approve_artwork(uuid,integer,uuid)', 'execute'), 'signed-out visitors (anon) must NOT be able to run approve_artwork');
+select pg_temp.assert_true(has_function_privilege('authenticated', 'pressgo.approve_artwork(uuid,integer,uuid)', 'execute'), 'signed-in users (authenticated) must be able to run approve_artwork');
+set role authenticated;
+select pg_temp.as_user('10000000-0000-0000-0000-0000000000a2');
+select pg_temp.ok($$select pg_temp.try_approve('art2.pdf')$$, 'Front Desk can still approve after re-running 0014');
+select pg_temp.as_user('10000000-0000-0000-0000-0000000000a3');
+select pg_temp.expect_fail($$select pg_temp.try_approve('art3.pdf')$$, 'plain staff can approve after re-running 0014');
 select 'PASSED: artwork approval roles' as result;
