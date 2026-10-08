@@ -2,6 +2,32 @@
 // PressGO chat, Slack-style: channels and private messages live in the left sidebar, the conversation fills the page.
 // Uses helpers from app.js (sb, me, depts, esc, shell, ask, call, alert2, friendly).
 (function () {
+  // ---- in-app picture viewer: shared by chat pictures (here) and image files on a job (app.js). Never navigates, never opens a tab.
+  window.pgViewImage = function (url, alt) {
+    if (!url) return;
+    if (document.querySelector('dialog.lightbox[open]')) return;   // already showing one (e.g. a double tap)
+    const dlg = document.createElement('dialog');
+    dlg.className = 'lightbox';
+    dlg.setAttribute('aria-label', alt ? 'Picture: ' + alt : 'Picture');
+    dlg.innerHTML = '<div class="lb-stage"><span class="lb-msg">Loading…</span></div><button type="button" class="lb-close" aria-label="Close picture">✕ Close</button>';
+    const stage = dlg.querySelector('.lb-stage');
+    const img = new Image();
+    img.alt = alt || 'Picture'; img.draggable = false; img.hidden = true;
+    img.onload = () => { stage.querySelector('.lb-msg')?.remove(); img.hidden = false; };
+    img.onerror = () => { const m = stage.querySelector('.lb-msg'); if (m) m.textContent = 'This picture could not be loaded.'; };
+    stage.appendChild(img);
+    img.src = url;
+    // click anywhere that is not the picture itself (backdrop, empty stage) closes; Escape is handled by the dialog
+    const openedAt = Date.now();   // ignore the tail of the tap that opened it (a double-tap must not flash it shut)
+    dlg.addEventListener('click', (e) => { if (e.target !== img && !e.target.closest('.lb-close') && Date.now() - openedAt > 350) dlg.close(); });
+    dlg.querySelector('.lb-close').addEventListener('click', () => dlg.close());
+    dlg.addEventListener('close', () => { dlg.remove(); if (!document.querySelector('dialog.lightbox')) document.documentElement.style.overflow = ''; });
+    document.body.appendChild(dlg);
+    document.documentElement.style.overflow = 'hidden';
+    dlg.showModal();
+    dlg.querySelector('.lb-close').focus();
+  };
+
   const css = document.createElement('style');
   css.textContent = `
 .thread{flex:1;min-width:0;display:flex;flex-direction:column;height:100%;background:var(--bg)}
@@ -164,7 +190,7 @@
   const picHtml = (m) => {
     const u = picUrls[m.attachment_path]?.url;
     const cap = m.body && m.body !== 'Photo' ? `<div>${esc(m.body)}</div>` : '';
-    return (u ? `<a href="${esc(u)}" target="_blank" rel="noopener"><img class="pic" src="${esc(u)}" alt="${esc(m.attachment_name || 'photo')}" loading="lazy"></a>` : '<div class="note">Picture unavailable</div>') + cap;
+    return (u ? `<img class="pic" src="${esc(u)}" alt="${esc(m.attachment_name || 'photo')}" loading="lazy" role="button" tabindex="0" data-view="${esc(u)}" title="Click to enlarge">` : '<div class="note">Picture unavailable</div>') + cap;
   };
 
   const canApprove = () => me.manager_role || me.front_desk;
@@ -293,7 +319,14 @@
     ta.focus();
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
     ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } };
-    document.getElementById('msgs').onclick = async (e) => {
+    const msgsEl = document.getElementById('msgs');
+    msgsEl.onkeydown = (e) => {
+      const pv = e.target.closest?.('[data-view]');
+      if (pv && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); window.pgViewImage(pv.dataset.view, pv.getAttribute('alt')); }
+    };
+    msgsEl.onclick = async (e) => {
+      const pv = e.target.closest('[data-view]');
+      if (pv) { e.preventDefault(); window.pgViewImage(pv.dataset.view, pv.getAttribute('alt')); return; }
       const ap = e.target.closest('[data-appr],[data-unappr]');
       if (ap) {
         const un = !!ap.dataset.unappr;
