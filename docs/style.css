@@ -162,9 +162,9 @@ button:disabled{opacity:.5;cursor:default}
 .timeline li:before{content:"";position:absolute;left:3px;top:17px;width:8px;height:8px;border-radius:50%;background:var(--line-2);box-shadow:0 0 0 3px var(--card)}
 .timeline li:after{content:"";position:absolute;left:6.5px;top:26px;bottom:-10px;width:1px;background:var(--line)}
 .timeline li:last-child:after{display:none}
-.row{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line)}
+.row{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 10px;border-bottom:1px solid var(--line);border-left:3px solid transparent}
 .row:last-child{border:0}.row .sub{color:var(--mut);font-size:13px}
-.row.unread{background:color-mix(in srgb,var(--brand) 8%,transparent);padding-left:10px;border-radius:var(--r-sm);border-left:3px solid var(--accent)}
+.row.unread{background:color-mix(in srgb,var(--brand) 8%,transparent);border-left-color:var(--accent)}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .sub{color:var(--mut);font-size:13px}
 
