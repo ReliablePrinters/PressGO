@@ -20,11 +20,11 @@ Four live Supabase settings need a decision before real staff use PressGO. **Non
 - **Recommended setting** is a suggestion for review. It is not a verified fact and nothing has been applied.
 - **Not yet approved for change** means the owner has not approved any change. Do not change it until they do.
 
-Important context: the Supabase project is **shared with the Reliable-Printers customer app**. Auth settings apply to the whole project, so a change made for PressGO may also affect the customer app. How the customer app depends on these settings was NOT VERIFIED.
+Important context: whether this Supabase project is also used by the Reliable-Printers customer app is **NOT VERIFIED** (see section 13, item 9). Auth settings apply to the whole project, so a change made for PressGO could also affect any other app that uses this project's Auth. How the customer app depends on these settings was NOT VERIFIED.
 
 | # | Setting | Current verified setting | Recommended setting | Not yet approved for change |
 |---|---|---|---|---|
-| 1 | Auth → Allow new users to sign up | **ON.** `PILOT.md` says it should be OFF. | OFF for PressGO, after confirming the customer app does not rely on public sign-up. | **Do not change yet**, because the project is shared with the customer app. |
+| 1 | Auth → Allow new users to sign up | **ON.** `PILOT.md` says it should be OFF. | OFF for PressGO, after confirming the customer app does not rely on public sign-up. | **Do not change yet**, because it is NOT VERIFIED whether the customer app uses this project's sign-up. |
 | 2 | Auth → Minimum password length | **6.** The `admin-users` function enforces 8 to 72 characters. | 8, to match the function. | **Do not change yet.** |
 | 3 | Auth → URL Configuration → Site URL | **`http://localhost:3000`.** The only Redirect URL is the GitHub Pages address `https://reliableprinters.github.io/PressGO/`. | Marked for review: decide whether the Site URL should be the deployed PressGO address (this may matter for the customer app too). | **Marked for review. Do not change yet.** |
 | 4 | Realtime → Allow public access to channels | **ON.** PressGO's presence channel is public, so anyone with the publishable key could join it and see display names. | Marked for security review. Turning it OFF would likely require changing how the app opens its channels (NOT VERIFIED). | **Marked for security review. Do not change yet.** |
@@ -271,7 +271,7 @@ These exist only in the Supabase dashboard (or GitHub), so they are lost in a re
 6. `docs/config.js` pointing at the right project, and GitHub Pages serving `docs/` from `main`.
 7. The first administrator (section 9) and all staff accounts.
 8. Project members: the live project is shared by 2 organization members (one Owner, one Administrator). VERIFIED.
-9. **The project is shared with another app** (the Reliable-Printers customer app uses the `public` schema in the same project). A project-wide export or restore covers both; PressGO's own data is only the `pressgo` schema. The customer app's tables were not inspected for this guide.
+9. **Customer app relationship: NOT VERIFIED.** The live `public` schema is empty (VERIFIED 2026-10-08, read-only: no tables, views, functions, policies or triggers), and the only Storage buckets and the only Edge Function in this project belong to PressGO. This guide therefore does **not** claim that the Reliable-Printers customer app stores anything in this project's `public` schema. Whether the customer app uses this project at all (for example its Auth accounts) has not been verified. One Auth account exists that is not a PressGO employee (unconfirmed, never signed in, created 2026-10-07; its origin is unknown). Until the relationship is confirmed, treat project-wide Auth changes with care and make any backup of this project cover the Auth user list as well as the `pressgo` schema.
 
 Things not checked at all (NOT VERIFIED): email templates, database network restrictions and SSL enforcement, connection-pooler settings, the contents of Vault (the extension is installed), JWT signing-key settings and the API keys page (deliberately not opened, so no key values were seen), project pause rules on the Free plan, and the GitHub Pages and branch-protection settings.
 
