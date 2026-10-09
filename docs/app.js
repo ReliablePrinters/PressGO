@@ -171,7 +171,7 @@ function shell(active, inner) {
       ${me.manager_role ? `<h4>Admin</h4>${nav('#/staff', 'staff', 'Staff', 'users')}` : ''}
       <div id="sidechats"></div></div>
     <div class="foot"><div class="me2">${window.pgAvatar(me.display_name, 36)}<div><b>${esc(me.display_name)}</b><div class="note">${esc(roles)}</div></div></div>
-      <div class="actions"><button id="cpw">Change password</button><button id="so">Sign out</button></div></div></aside>
+      <div class="actions"><button id="cpw">Change password</button><button id="so">Sign out</button>${window.pgNotify ? '<button id="nfy" style="flex-basis:100%">Notifications</button>' : ''}</div></div></aside>
     <div class="content"><main>${inner}</main></div></div>`;
   const box = document.getElementById('appbox');
   document.getElementById('burger').onclick = () => box.classList.toggle('nav-open');
@@ -186,6 +186,7 @@ function shell(active, inner) {
     error ? toast(error.message, 'error') : toast('Your password has been changed.');
   };
   document.getElementById('so').onclick = async () => { await sb.auth.signOut(); me = null; showLogin(); };
+  const nfy = document.getElementById('nfy'); if (nfy) nfy.onclick = () => window.pgNotify.settings(me);
 }
 function route() {
   const h = location.hash || '#/home';

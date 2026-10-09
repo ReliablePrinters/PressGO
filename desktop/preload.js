@@ -3,6 +3,19 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('pressgoDesktop', Object.freeze({
+  notify: Object.freeze({
+    show: (p) => ipcRenderer.invoke('notify:show', {
+      title: String((p && p.title) || ''), body: String((p && p.body) || ''),
+      conv: p && typeof p.conv === 'string' ? p.conv : null, test: !!(p && p.test)
+    }),
+    isSupported: () => ipcRenderer.invoke('notify:supported'),
+    onOpen: (cb) => {
+      if (typeof cb !== 'function') return () => {};
+      const h = (_e, d) => { try { cb(d); } catch (e) { /* ignore page errors */ } };
+      ipcRenderer.on('notify:open', h);
+      return () => ipcRenderer.removeListener('notify:open', h);
+    }
+  }),
   update: Object.freeze({
     getState: () => ipcRenderer.invoke('update:get'),
     start: () => ipcRenderer.invoke('update:start'),

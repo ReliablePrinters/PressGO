@@ -119,10 +119,18 @@
     };
     paintStatus();
   }
+  async function notifyNew(row) {
+    try {
+      let conv = convs.find((x) => x.id === row.conversation_id);
+      if (!conv) { convs = await loadList(); conv = convs.find((x) => x.id === row.conversation_id); }   // a chat that did not exist a moment ago
+      window.pgNotify.message(row, conv, me);
+    } catch (e) { /* a notification must never break chat */ }
+  }
   function ensureRealtime() {
     if (rt) return;
     rt = sb.channel('chat-all').on('postgres_changes', { event: '*', schema: 'pressgo', table: 'messages' }, (p) => {
       if (clearTyper && p.eventType === 'INSERT') clearTyper(p.new.author_id);
+      if (p.eventType === 'INSERT' && window.pgNotify) notifyNew(p.new);       // Windows app only: desktop notification when you are away
       if (p.new.conversation_id === current) loadThread(current); else window.chatSidebar();
     }).subscribe();
   }

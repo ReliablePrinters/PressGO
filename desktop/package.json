@@ -2,6 +2,7 @@
   "name": "pressgo-desktop",
   "productName": "PressGO",
   "version": "1.1.0",
+  "pgAppId": "com.reliableprinters.pressgo",
   "description": "PressGO desktop app for Windows. Opens the live PressGO site and updates itself from the official GitHub Releases.",
   "main": "main.js",
   "author": "Reliable Printers",
@@ -31,6 +32,7 @@
       "main.js",
       "contextmenu.js",
       "updater.js",
+      "notify.js",
       "preload.js",
       "package.json"
     ],

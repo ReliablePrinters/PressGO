@@ -1,9 +1,10 @@
 'use strict';
 const path = require('path');
 const fs = require('fs');
-const { app, BrowserWindow, Menu, session, shell, clipboard, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, session, shell, clipboard, ipcMain, Notification } = require('electron');
 const { buildTemplate } = require('./contextmenu');
 const { createUpdater } = require('./updater');
+const { createNotifier } = require('./notify');
 
 // PressGO desktop: a plain window around the live PressGO site.
 // It holds no keys, no data and no copy of the site. Everything is loaded from APP_URL.
@@ -55,6 +56,16 @@ function isInstalledCopy() {
   } catch (e) {
     return false;
   }
+}
+
+function startNotifications() {
+  createNotifier({
+    Notification,
+    ipcMain,
+    getWindow: () => win,
+    // Only the real PressGO page, in the main window, may ask for a notification.
+    isTrustedSender: (e) => !!(e.senderFrame && win && e.senderFrame === win.webContents.mainFrame && isAppUrl(e.senderFrame.url))
+  });
 }
 
 function startUpdates() {
@@ -146,7 +157,10 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
       callback(ALLOWED_PERMISSIONS.has(permission));
     });
+    // Windows needs this name to match the installed shortcut, or it will not show notifications.
+    try { app.setAppUserModelId(require('./package.json').pgAppId || 'com.reliableprinters.pressgo'); } catch (e) { /* keep default */ }
     createWindow();
+    startNotifications();
     startUpdates();
   });
   app.on('window-all-closed', () => app.quit());
