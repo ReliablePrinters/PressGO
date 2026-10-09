@@ -4,6 +4,7 @@
 //   http://localhost:8099/  the "update feed" (latest.yml + installer) from a dist-test folder
 // Usage: node try-serve.js 1.1.1            (feed = dist-test/1.1.1)
 //        node try-serve.js 1.1.1 --images   (shows a picture-preview test page instead of the sign-in page)
+//        node try-serve.js 1.1.1 --notify   (shows a notification test page instead of the sign-in page)
 //        node try-serve.js 1.1.1 --tamper   (breaks the checksum on purpose, to prove a bad update is rejected)
 const http = require('http');
 const fs = require('fs');
@@ -12,7 +13,8 @@ const path = require('path');
 const feedVersion = process.argv[2];
 if (!/^\d+\.\d+\.\d+$/.test(feedVersion || '')) { console.error('Give the version to offer as the update, for example: node try-serve.js 1.1.1'); process.exit(1); }
 const tamper = process.argv.includes('--tamper');
-const images = process.argv.includes('--images');   // show the picture test page instead of the sign-in page
+const images = process.argv.includes('--images');
+const notify = process.argv.includes('--notify');   // show the notification test page   // show the picture test page instead of the sign-in page
 const TESTIMG = path.join(__dirname, 'test-images');
 const SITE = path.join(__dirname, '..', 'docs');
 const FEED = path.join(__dirname, 'dist-test', feedVersion);
@@ -25,7 +27,7 @@ function serve(root, port, label) {
     if (rel.endsWith('/')) rel += 'index.html';
     let base = root;
     if (rel.startsWith('/test-images/')) { base = TESTIMG; rel = rel.slice('/test-images'.length); }
-    else if (images && port === 8081 && (rel === '/index.html')) { base = TESTIMG; rel = '/imgtest.html'; }
+    else if ((images || notify) && port === 8081 && (rel === '/index.html')) { base = TESTIMG; rel = images ? '/imgtest.html' : '/notifytest.html'; }
     const file = path.normalize(path.join(base, rel));
     if (!file.startsWith(base + path.sep) && file !== base) { res.writeHead(403).end(); return; }
     fs.stat(file, (err, st) => {

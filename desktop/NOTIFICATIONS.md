@@ -39,3 +39,8 @@ installed app (the Start menu shortcut gives Windows the name it needs), not for
    Supabase migration and a new secret, so it must be approved and reviewed first. Electron has no built-in push,
    so this also means adding a push service to the desktop app.
 Option 1 is the safer next step.
+
+## Testing on your PC without real messages
+`node try-serve.js 1.1.1 --notify` shows a small test page inside PressGO Test with buttons for a test notification,
+a delayed one (to try minimized) and click-to-open. Rebuild the test app first (`node try-build.js 1.1.0`) because
+this feature changes the desktop part.
