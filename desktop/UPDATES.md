@@ -54,3 +54,11 @@ The desktop window builds the normal right-click menu itself (Electron shows non
 Undo, Redo, Cut, Copy, Paste, Paste as plain text and Select all (plus spelling suggestions); links get
 Open link in browser and Copy link address; images get Copy image, Save image as, Open image in browser and
 Copy image address; empty areas get Back, Reload and Select all. See `contextmenu.js`.
+
+## Testing an update on your own PC before publishing (nothing is published)
+`try-build.js` and `try-serve.js` build a separate **PressGO Test** app (its own install folder, settings and
+uninstaller, so your real PressGO is never touched). It opens a copy of the site from this computer and looks
+for updates in a local folder instead of GitHub. Build version 1.1.0 and 1.1.1 with
+`node try-build.js 1.1.0` and `node try-build.js 1.1.1`, install the 1.1.0 one, run
+`node try-serve.js 1.1.1`, then open PressGO Test. The Update PressGO button should appear on the sign-in screen.
+`node try-serve.js 1.1.1 --tamper` offers the same update with a deliberately broken checksum, which must be rejected.

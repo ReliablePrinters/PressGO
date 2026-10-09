@@ -7,9 +7,14 @@ const { createUpdater } = require('./updater');
 
 // PressGO desktop: a plain window around the live PressGO site.
 // It holds no keys, no data and no copy of the site. Everything is loaded from APP_URL.
-const APP_URL = 'https://reliableprinters.github.io/PressGO/';
-const APP_ORIGIN = 'https://reliableprinters.github.io';
-const APP_PATH = '/PressGO/';
+let APP_URL = 'https://reliableprinters.github.io/PressGO/';
+// Local test builds only (made by try-build.js, never by the real build): open a copy of the site on this computer.
+try {
+  const o = require('./test-override.json');
+  if (o && /^http:\/\/(localhost|127\.0\.0\.1):\d+\//.test(o.url)) APP_URL = o.url;
+} catch (e) { /* normal build: no override file */ }
+const APP_ORIGIN = new URL(APP_URL).origin;
+const APP_PATH = new URL(APP_URL).pathname;
 const ALLOWED_PERMISSIONS = new Set(['notifications', 'clipboard-sanitized-write', 'fullscreen']);
 
 let win = null;

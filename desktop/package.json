@@ -10,7 +10,8 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win --publish never",
-    "test": "node --test"
+    "test": "node --test",
+    "icon": "node make-icon.js"
   },
   "dependencies": {
     "electron-updater": "^6.6.2"
