@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PressGO picture preview test</title>
+<link rel="stylesheet" href="/style.css">
+<style>body{padding:24px;max-width:900px;margin:0 auto}.rw{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin:12px 0}.bx{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--card)}.bx h3{margin:0 0 8px;font-size:14px}img.t{display:block;max-width:240px;max-height:150px;border-radius:8px}</style>
+</head><body>
+<h1>Picture preview test page</h1>
+<p class="note">Local test page, not part of PressGO. Left-click a picture marked "enlarges" and it should open large inside this window. Press Esc, click outside, or use the X to close. Right-click anything to check the menu.</p>
+<div class="rw">
+ <div class="bx"><h3>1. Enlarges (same website)</h3><img class="t pic" data-zoom src="/test-images/wide.jpg" alt="Wide test picture" tabindex="0" role="button"></div>
+ <div class="bx"><h3>2. Enlarges (a different website, port 8099)</h3><img class="t pic" data-zoom src="http://localhost:8099/test-images/tall.jpg" alt="Tall test picture from another site" tabindex="0" role="button"></div>
+ <div class="bx"><h3>3. Small picture (not stretched)</h3><img class="t pic" data-zoom src="/test-images/small.png" alt="Small test picture" tabindex="0" role="button"></div>
+</div>
+<div class="rw">
+ <div class="bx"><h3>4. Picture inside a link to another page</h3><a href="http://localhost:8099/test-images/other.html"><img class="t pic" data-zoom src="/test-images/wide.jpg" alt="Linked picture" tabindex="0"></a><p class="note">Should enlarge here, not leave the page. Right-click it for "Open link in browser".</p></div>
+ <div class="bx"><h3>5. Normal link (not a picture)</h3><a href="http://localhost:8099/test-images/other.html">A normal link</a><p class="note">Should open your normal browser, as links do.</p></div>
+ <div class="bx"><h3>6. Button and text box</h3><button type="button" onclick="document.getElementById('bc').textContent=Number(document.getElementById('bc').textContent)+1">Click me</button> clicked <b id="bc">0</b> times<br><br><input placeholder="Type, then right-click here" style="width:220px"></div>
+</div>
+<script src="/lightbox.js"></script>
+</body></html>

@@ -164,7 +164,7 @@
   const picHtml = (m) => {
     const u = picUrls[m.attachment_path]?.url;
     const cap = m.body && m.body !== 'Photo' ? `<div>${esc(m.body)}</div>` : '';
-    return (u ? `<a href="${esc(u)}" target="_blank" rel="noopener"><img class="pic" src="${esc(u)}" alt="${esc(m.attachment_name || 'photo')}" loading="lazy"></a>` : '<div class="note">Picture unavailable</div>') + cap;
+    return (u ? `<img class="pic" data-zoom src="${esc(u)}" alt="${esc(m.attachment_name || 'photo')}" loading="lazy" tabindex="0" role="button" title="Click to enlarge">` : '<div class="note">Picture unavailable</div>') + cap;
   };
 
   const canApprove = () => me.manager_role || me.front_desk;

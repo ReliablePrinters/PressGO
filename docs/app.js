@@ -412,7 +412,7 @@ async function viewJob(id) {
       ${newerThanApproval ? '<p class="err">A newer file was uploaded after the approved artwork. A manager should check which one to approve.</p>' : ''}
       ${(files || []).length ? `<ul class="hist">${files.map((f) => `<li><div><b>${esc(f.file_name)}</b> <span class="badge st">v${f.version_no}</span><span class="badge">${esc(f.category)}</span>${f.id === j.approved_file_id ? '<span class="badge ok">Approved for Print</span>' : ''}
         <div class="sub">${esc(size(f.size_bytes))} · ${esc(f.uploader?.display_name || '')} · ${esc(fmt(f.uploaded_at))}</div>
-        <div class="actions"><button data-act="dl" data-path="${esc(f.storage_path)}">Open</button>
+        <div class="actions"><button data-act="dl" data-path="${esc(f.storage_path)}" data-name="${esc(f.file_name)}">Open</button>
         ${mgr && !isClosed(j) && f.category !== 'Supporting Document' && f.id !== j.approved_file_id ? `<button class="primary" data-act="approve" data-id="${f.id}">Approve for Print</button>` : ''}</div></div></li>`).join('')}</ul>` : '<p class="note">No files yet.</p>'}
       ${mgr && j.approved_file_id && !isClosed(j) ? '<div class="actions"><button data-act="unapprove">Withdraw approval…</button></div>' : ''}
       ${!isClosed(j) ? `<form id="upf" class="uploadbox"><div class="grid2"><label>File<input type="file" name="file" required></label>
@@ -499,6 +499,8 @@ async function viewJob(id) {
     if (act === 'dl') {
       const { data, error: er } = await sb.storage.from('job-files').createSignedUrl(b.dataset.path, 120);
       if (er) return (document.getElementById('je').textContent = friendly(er));
+      // Pictures open large inside PressGO. Other files (PDF, Word, etc.) still open outside, because PressGO cannot show them.
+      if (/\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(b.dataset.name || '') && window.pgLightbox) return window.pgLightbox.open(data.signedUrl, b.dataset.name);
       return window.open(data.signedUrl, '_blank', 'noopener');
     }
     if (act === 'approve') return run(call('approve_artwork', { p_job: id, p_version: j.version, p_file: bid }));

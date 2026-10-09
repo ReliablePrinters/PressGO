@@ -3,6 +3,7 @@
 //   http://localhost:8081/  the PressGO website files from ../docs
 //   http://localhost:8099/  the "update feed" (latest.yml + installer) from a dist-test folder
 // Usage: node try-serve.js 1.1.1            (feed = dist-test/1.1.1)
+//        node try-serve.js 1.1.1 --images   (shows a picture-preview test page instead of the sign-in page)
 //        node try-serve.js 1.1.1 --tamper   (breaks the checksum on purpose, to prove a bad update is rejected)
 const http = require('http');
 const fs = require('fs');
@@ -11,17 +12,22 @@ const path = require('path');
 const feedVersion = process.argv[2];
 if (!/^\d+\.\d+\.\d+$/.test(feedVersion || '')) { console.error('Give the version to offer as the update, for example: node try-serve.js 1.1.1'); process.exit(1); }
 const tamper = process.argv.includes('--tamper');
+const images = process.argv.includes('--images');   // show the picture test page instead of the sign-in page
+const TESTIMG = path.join(__dirname, 'test-images');
 const SITE = path.join(__dirname, '..', 'docs');
 const FEED = path.join(__dirname, 'dist-test', feedVersion);
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.yml': 'text/yaml', '.exe': 'application/octet-stream', '.blockmap': 'application/octet-stream' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.webmanifest': 'application/manifest+json', '.yml': 'text/yaml', '.exe': 'application/octet-stream', '.blockmap': 'application/octet-stream' };
 
 function serve(root, port, label) {
   http.createServer((req, res) => {
     let rel;
     try { rel = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch (e) { res.writeHead(400).end(); return; }
     if (rel.endsWith('/')) rel += 'index.html';
-    const file = path.normalize(path.join(root, rel));
-    if (!file.startsWith(root + path.sep) && file !== root) { res.writeHead(403).end(); return; }
+    let base = root;
+    if (rel.startsWith('/test-images/')) { base = TESTIMG; rel = rel.slice('/test-images'.length); }
+    else if (images && port === 8081 && (rel === '/index.html')) { base = TESTIMG; rel = '/imgtest.html'; }
+    const file = path.normalize(path.join(base, rel));
+    if (!file.startsWith(base + path.sep) && file !== base) { res.writeHead(403).end(); return; }
     fs.stat(file, (err, st) => {
       if (err || !st.isFile()) { console.log(label, req.method, rel, '404'); res.writeHead(404).end('not found'); return; }
       const type = TYPES[path.extname(file)] || 'application/octet-stream';
