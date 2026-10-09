@@ -55,6 +55,9 @@ jobs:
       - name: Install
         run: npm install --no-audit --no-fund
 
+      - name: Run the desktop tests
+        run: npm test
+
       - name: Build installer
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -64,9 +67,13 @@ jobs:
         run: |
           cd dist
           ls -l
-          for f in PressGO-Setup.exe PressGO-Portable.zip; do
+          for f in PressGO-Setup.exe PressGO-Portable.zip latest.yml; do
             test -s "$f" || { echo "Missing $f"; exit 1; }
           done
+          # The installed apps read latest.yml to find updates. Make sure it names this version and the installer.
+          grep -q "^version: ${{ steps.ver.outputs.version }}$" latest.yml || { echo "latest.yml does not name version ${{ steps.ver.outputs.version }}"; cat latest.yml; exit 1; }
+          grep -q "PressGO-Setup.exe" latest.yml || { echo "latest.yml does not name PressGO-Setup.exe"; cat latest.yml; exit 1; }
+          cat latest.yml
           sha256sum PressGO-Setup.exe PressGO-Portable.zip > SHA256SUMS.txt
           cat SHA256SUMS.txt
           {
@@ -89,6 +96,8 @@ jobs:
             desktop/dist/PressGO-Setup.exe
             desktop/dist/PressGO-Portable.zip
             desktop/dist/SHA256SUMS.txt
+            desktop/dist/latest.yml
+            desktop/dist/PressGO-Setup.exe.blockmap
           if-no-files-found: error
           retention-days: 14
 
@@ -127,8 +136,11 @@ jobs:
           PressGO needs an internet connection. The app opens the live PressGO site and contains
           no keys, no staff data and no copy of the database. **PressGO-Portable.zip** is the same
           app as a plain folder (unzip and run PressGO.exe). **SHA256SUMS.txt** lets you check the downloads.
+
+          Installed copies (version 1.1.0 and newer) show an **Update PressGO** button when a newer release
+          appears here. **latest.yml** and the **.blockmap** file are what installed copies read; do not delete them.
           EOF
           gh release create "$TAG" \
-            dist/PressGO-Setup.exe dist/PressGO-Portable.zip dist/SHA256SUMS.txt \
+            dist/PressGO-Setup.exe dist/PressGO-Portable.zip dist/SHA256SUMS.txt dist/latest.yml dist/PressGO-Setup.exe.blockmap \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "PressGO v${VERSION}" --notes-file notes.md

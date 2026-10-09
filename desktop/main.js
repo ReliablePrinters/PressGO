@@ -1,5 +1,9 @@
 'use strict';
-const { app, BrowserWindow, Menu, session, shell } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const { app, BrowserWindow, Menu, session, shell, clipboard, ipcMain } = require('electron');
+const { buildTemplate } = require('./contextmenu');
+const { createUpdater } = require('./updater');
 
 // PressGO desktop: a plain window around the live PressGO site.
 // It holds no keys, no data and no copy of the site. Everything is loaded from APP_URL.
@@ -38,6 +42,35 @@ function showOffline() {
   }, 10000);
 }
 
+// Updates only work for the installed copy (made by PressGO-Setup.exe). The portable zip and a developer
+// run show no update button, because the installer must not be run over a folder it did not create.
+function isInstalledCopy() {
+  try {
+    return fs.readdirSync(path.dirname(process.execPath)).some((f) => /^Uninstall .*\.exe$/i.test(f));
+  } catch (e) {
+    return false;
+  }
+}
+
+function startUpdates() {
+  const enabled = app.isPackaged && isInstalledCopy();
+  let autoUpdater = null;
+  if (enabled) {
+    try { autoUpdater = require('electron-updater').autoUpdater; } catch (e) { autoUpdater = null; }
+  }
+  const up = createUpdater({
+    autoUpdater: autoUpdater || { on() {}, checkForUpdates() {}, downloadUpdate() {}, quitAndInstall() {} },
+    ipcMain,
+    enabled: !!autoUpdater,
+    currentVersion: app.getVersion(),
+    getWindow: () => win,
+    // Only the real PressGO page in the main frame may talk to the updater.
+    isTrustedSender: (e) => !!(e.senderFrame && e.senderFrame === win?.webContents.mainFrame && isAppUrl(e.senderFrame.url)),
+    log: () => {}
+  });
+  up.schedule();
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1280,
@@ -50,6 +83,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
       devTools: false,
       webSecurity: true
     }
@@ -68,6 +102,23 @@ function createWindow() {
   });
   win.webContents.on('did-fail-load', (event, code, desc, url, isMainFrame) => {
     if (isMainFrame && code !== -3) showOffline();
+  });
+  // Electron shows no right-click menu by itself, so build the usual one (text editing, links, images).
+  win.webContents.on('context-menu', (event, params) => {
+    const wc = win.webContents;
+    const tpl = buildTemplate(params, {
+      copyText: (t) => clipboard.writeText(t),
+      copyImageAt: (x, y) => wc.copyImageAt(x, y),
+      openExternal: openInBrowser,
+      saveImage: (u) => wc.downloadURL(u),               // Windows shows its normal "Save as" box
+      replaceMisspelling: (w) => wc.replaceMisspelling(w),
+      addToDictionary: (w) => wc.session.addWordToSpellCheckerDictionary(w),
+      canGoBack: wc.navigationHistory ? wc.navigationHistory.canGoBack() : wc.canGoBack(),
+      goBack: () => (wc.navigationHistory ? wc.navigationHistory.goBack() : wc.goBack()),
+      reload: () => wc.reload(),
+      isAppUrl
+    });
+    if (tpl.length) Menu.buildFromTemplate(tpl).popup({ window: win });
   });
   win.on('closed', () => {
     win = null;
@@ -91,6 +142,7 @@ if (!app.requestSingleInstanceLock()) {
       callback(ALLOWED_PERMISSIONS.has(permission));
     });
     createWindow();
+    startUpdates();
   });
   app.on('window-all-closed', () => app.quit());
 }

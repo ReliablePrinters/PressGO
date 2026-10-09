@@ -136,7 +136,7 @@ async function loadMe(session) {
   route();
 }
 function showLogin(msg = '') {
-  $app.innerHTML = `<div class="signin"><div class="hero"><img src="logo.png" alt="Reliable Printers &amp; Stationery Ltd."><h1>Press<span>GO</span></h1><p>Job tracking and team chat for Reliable Printers &amp; Stationery Ltd.</p></div>
+  $app.innerHTML = `<div class="signin"><div class="hero"><img src="logo.png" alt="Reliable Printers &amp; Stationery Ltd."><h1>Press<span>GO</span></h1><p>Job tracking and team chat for Reliable Printers &amp; Stationery Ltd.</p><div id="updbox" class="updbox"></div></div>
     <div class="formside"><div class="box"><h2>Sign in</h2><p class="note" style="margin:0 0 18px">Use the username and password your manager gave you.</p>
     <form id="lf"><label>Username<input name="username" required autocomplete="username" autocapitalize="none" spellcheck="false" autofocus></label>
     <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
@@ -165,7 +165,7 @@ function shell(active, inner) {
   const nav = (href, key, label, icon, cta) => `<a class="nav ${cta ? 'cta' : ''} ${active === key ? 'on' : ''}" href="${href}" ${active === key ? 'aria-current="page"' : ''}><span class="lb">${ic(icon)}<span>${label}</span></span></a>`;
   const roles = [me.manager_role ? 'Manager' : '', me.front_desk ? 'Front Desk' : ''].filter(Boolean).join(' · ');
   $app.innerHTML = `<div class="app" id="appbox"><div class="mobbar"><button id="burger" aria-label="Menu">☰</button><img src="logo.png" alt=""><b>PressGO</b></div>
-    <aside class="side"><div class="brand"><img src="logo.png" alt=""><b>Press<span>GO</span></b></div><div class="scroll">
+    <aside class="side"><div class="brand"><img src="logo.png" alt=""><b>Press<span>GO</span></b></div><div id="updbox" class="updbox"></div><div class="scroll">
       <h4>Work</h4>
       ${nav('#/home', 'home', 'Home', 'home')}${nav('#/jobs', 'jobs', 'Jobs', 'jobs')}${canCreate() ? nav('#/new', 'new', 'New job', 'plus', true) : ''}${nav('#/tasks', 'tasks', 'Tasks', 'tasks')}<a class="nav ${active === 'alerts' ? 'on' : ''}" href="#/alerts" id="alertlink" ${active === 'alerts' ? 'aria-current="page"' : ''}><span class="lb">${ic('bell')}<span class="tx">Alerts</span></span></a>
       ${me.manager_role ? `<h4>Admin</h4>${nav('#/staff', 'staff', 'Staff', 'users')}` : ''}
