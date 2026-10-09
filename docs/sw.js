@@ -1,6 +1,6 @@
 // PressGO: lets the app be installed on a phone or computer. It only keeps a copy of the app's own screens
 // so it opens fast. Staff data (jobs, messages, pictures) is never stored here and always needs a sign-in.
-const VERSION = '2026-10-08.1';   // change this on every release: it names the cache, so older copies are deleted
+const VERSION = '2026-10-09.1';   // change this on every release: it names the cache, so older copies are deleted
 const CACHE = 'pressgo-shell-' + VERSION;
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => {

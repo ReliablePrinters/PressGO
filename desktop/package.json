@@ -1,15 +1,21 @@
 {
   "name": "pressgo-desktop",
   "productName": "PressGO",
-  "version": "1.0.0",
-  "description": "PressGO desktop app for Windows. Opens the live PressGO site.",
+  "version": "1.1.0",
+  "pgAppId": "com.reliableprinters.pressgo",
+  "description": "PressGO desktop app for Windows. Opens the live PressGO site and updates itself from the official GitHub Releases.",
   "main": "main.js",
   "author": "Reliable Printers",
   "license": "UNLICENSED",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win --publish never"
+    "dist": "electron-builder --win --publish never",
+    "test": "node --test",
+    "icon": "node make-icon.js"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "electron": "44.7.0",
@@ -24,6 +30,10 @@
     },
     "files": [
       "main.js",
+      "contextmenu.js",
+      "updater.js",
+      "notify.js",
+      "preload.js",
       "package.json"
     ],
     "npmRebuild": false,
@@ -31,8 +41,18 @@
       "icon": "build/icon.png",
       "artifactName": "PressGO-Portable.${ext}",
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "zip", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "nsis": {
@@ -41,6 +61,14 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "artifactName": "PressGO-Setup.${ext}"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ReliablePrinters",
+        "repo": "PressGO",
+        "releaseType": "release"
+      }
+    ]
   }
 }

@@ -1,0 +1,6 @@
+node_modules/
+desktop/dist/
+desktop/dist-test/
+desktop/build/
+desktop/test-override.json
+desktop/.test-config.json

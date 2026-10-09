@@ -422,3 +422,18 @@ label.opt b{font-weight:600}
 .staffrow{grid-template-columns:1fr auto}
 @media(max-width:800px){.staffrow{grid-template-columns:1fr}.staffrow .actions button{flex:1 1 30%}.tbl tr td:first-child{padding-left:6px}}
 @media(hover:none){.thread .msg .bd{padding-right:34px}}
+
+/* ---------- 13. desktop update button (only shown inside the PressGO Windows app) ---------- */
+.updbox:empty{display:none}
+.updbox{margin:0 12px 10px}
+.upd{background:var(--card,#fff);color:var(--ink);border:1px solid var(--brand);border-radius:var(--r);padding:12px;box-shadow:var(--sh-2,0 2px 8px rgba(0,0,0,.15));font-size:13px}
+.side .upd{background:rgba(255,255,255,.07);color:#fff;border-color:rgba(255,255,255,.28)}
+.upd.ok{border-color:#22c55e}.upd.bad{border-color:#ef4444}
+.upd .uh{flex-wrap:wrap;display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:6px}.upd .uh span{opacity:.75;font-size:12px}
+.upd .un{margin:0 0 10px;opacity:.85;line-height:1.4;overflow-wrap:anywhere}
+.upd button{width:100%;min-height:38px;font-weight:700}
+.upd button.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+.side .upd button:not(.primary){background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.3)}
+.upd button:disabled{opacity:.6;cursor:default}
+.ubar{height:8px;border-radius:99px;background:rgba(127,127,127,.3);overflow:hidden;margin:2px 0 10px}.ubar i{display:block;height:100%;background:var(--accent,#e6199b);transition:width .25s}
+.signin .hero .updbox{margin:22px 0 0;max-width:340px}.signin .hero .upd{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.35)}

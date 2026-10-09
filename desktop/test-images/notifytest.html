@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PressGO notification test</title>
+<link rel="stylesheet" href="/style.css">
+<style>body{padding:24px;max-width:760px;margin:0 auto}.bx{border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--card);margin:14px 0}.bx h3{margin:0 0 6px;font-size:15px}.bx button{margin:6px 8px 6px 0}#log{font-family:Consolas,monospace;font-size:13px;white-space:pre-wrap}</style>
+</head><body>
+<h1>Notification test page</h1>
+<p class="note">Local test page, not part of PressGO. It checks the Windows notification part only (no sign-in, no real messages).</p>
+<div class="bx"><h3>1. Send one now</h3><button type="button" id="b1" class="primary">Send a test notification now</button>
+<p class="note">PressGO is in front, so Windows should show NOTHING for real messages, but this test button always shows one.</p></div>
+<div class="bx"><h3>2. Send one in 8 seconds, while PressGO is minimized</h3><button type="button" id="b2" class="primary">Start 8 second timer</button>
+<p class="note">Click it, then minimize PressGO (or click another program). A notification should appear. Click the notification: PressGO should come back to the front and the line below should say it opened the conversation.</p></div>
+<div class="bx"><h3>3. Real-style notification (sender and preview)</h3><button type="button" id="b3">Send "Marcia Brown: Can you check the proof?"</button>
+<button type="button" id="b4">Send 3 in a row (should be allowed; a 6th within 10 seconds is blocked)</button></div>
+<div class="bx"><h3>Result</h3><div id="log">Nothing yet.</div></div>
+<script>
+const CONV = '44444444-4444-4444-4444-444444444444';
+const log = (t) => { document.getElementById('log').textContent = new Date().toLocaleTimeString() + '  ' + t + '\n' + document.getElementById('log').textContent.replace(/^Nothing yet\.$/, ''); };
+const n = window.pressgoDesktop && window.pressgoDesktop.notify;
+if (!n) log('This is not the PressGO desktop app, so notifications are not available here.');
+else {
+  n.isSupported().then((s) => log('Windows notifications supported by this build: ' + (s && s.supported)));
+  n.onOpen((d) => { log('You clicked a notification. PressGO opened conversation ' + (d && d.conv)); });
+  const show = async (p) => { const r = await n.show(p); log('Asked Windows to show it: ' + JSON.stringify(r)); };
+  b1.onclick = () => show({ title: 'PressGO', body: 'If you can see this, notifications are working.', conv: null, test: true });
+  b2.onclick = () => { log('Timer started. Minimize PressGO now.'); setTimeout(() => show({ title: 'Marcia Brown', body: 'Can you check the proof?', conv: CONV }), 8000); };
+  b3.onclick = () => show({ title: 'Marcia Brown', body: 'Can you check the proof?', conv: CONV, test: true });
+  b4.onclick = async () => { for (let i = 1; i <= 3; i++) await show({ title: 'Test ' + i, body: 'Message ' + i, conv: CONV, test: true }); };
+}
+</script></body></html>
