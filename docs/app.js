@@ -14,6 +14,8 @@ const fmt = (d) => d ? new Date(d).toLocaleString([], { dateStyle: 'medium', tim
 const isClosed = (j) => j.lifecycle_status === 'Collected' || j.lifecycle_status === 'Cancelled';
 const isLate = (j) => !isClosed(j) && j.lifecycle_status !== 'Ready for Collection' && new Date(j.due_at) < new Date();
 const canCreate = () => me && (me.manager_role || me.front_desk);
+// Artwork approval (Approved for Print): Front Desk, Manager (admin) only. The database enforces the same rule in approve_artwork().
+const canApproveArtwork = () => !!me && (me.manager_role === true || me.front_desk === true);
 const friendly = (e) => (e && e.message ? e.message : String(e)).replace(/^.*?ERROR:\s*/, '');
 
 // ---------------------------------------------------------------- look-and-feel helpers (markup only, no data logic)
@@ -344,7 +346,7 @@ async function viewJob(id) {
   const [{ data: j, error }, { data: hist }, { data: files }, { data: holds }, { data: hand }] = await Promise.all([
     sb.from('jobs').select('*,departments:current_department_id(name),assignee:current_assignee_id(display_name)').eq('id', id).maybeSingle(),
     sb.from('audit_events').select('id,action,reason,created_at,before,after,actor:actor_id(display_name)').eq('job_id', id).order('created_at', { ascending: false }).order('id', { ascending: false }),
-    sb.from('job_files').select('id,category,file_name,size_bytes,version_no,storage_path,uploaded_at,uploader:uploaded_by(display_name)').eq('job_id', id).order('uploaded_at', { ascending: false }),
+    sb.from('job_files').select('id,category,file_name,mime_type,size_bytes,version_no,storage_path,uploaded_at,uploader:uploaded_by(display_name)').eq('job_id', id).order('uploaded_at', { ascending: false }),
     sb.from('job_holds').select('id,kind,note,raised_at,resolved_at,resolution_note,raiser:raised_by(display_name),resolver:resolved_by(display_name)').eq('job_id', id).order('raised_at', { ascending: false }),
     sb.from('job_handoffs').select('id,note,status,created_at,from_department_id,to_department_id,sender:from_employee_id(display_name)').eq('job_id', id).order('created_at', { ascending: false })
   ]);
@@ -363,7 +365,7 @@ async function viewJob(id) {
   }
   const idx = ['New', 'Queued', 'In Production', 'Finishing', 'Ready for Collection', 'Collected'].indexOf(j.lifecycle_status);
   const blocked = j.lifecycle_status === 'Queued' && j.artwork_required && !j.approved_file_id
-    ? '<p class="note">Artwork must be uploaded and approved by a manager before this job can start.</p>' : '';
+    ? '<p class="note">Artwork must be uploaded and approved by Front Desk or a manager before this job can start.</p>' : '';
   const openHolds = (holds || []).filter((h) => !h.resolved_at);
   const pending = (hand || []).find((h) => h.status === 'Pending');
   const deptName = (id_) => depts.find((d) => d.id === id_)?.name || 'another department';
@@ -410,11 +412,11 @@ async function viewJob(id) {
       ${openHolds.length ? '<p class="note">While a problem is open, this job cannot move forward.</p>' : ''}
       ${!isClosed(j) ? '<div class="actions"><button data-act="raise">Report a problem…</button></div>' : ''}</div>
     <div class="card"><h3 style="margin-top:0">Files</h3>
-      ${newerThanApproval ? '<p class="err">A newer file was uploaded after the approved artwork. A manager should check which one to approve.</p>' : ''}
+      ${newerThanApproval ? '<p class="err">A newer file was uploaded after the approved artwork. Front Desk or a manager should check which one to approve.</p>' : ''}
       ${(files || []).length ? `<ul class="hist">${files.map((f) => `<li><div><b>${esc(f.file_name)}</b> <span class="badge st">v${f.version_no}</span><span class="badge">${esc(f.category)}</span>${f.id === j.approved_file_id ? '<span class="badge ok">Approved for Print</span>' : ''}
         <div class="sub">${esc(size(f.size_bytes))} · ${esc(f.uploader?.display_name || '')} · ${esc(fmt(f.uploaded_at))}</div>
-        <div class="actions"><button data-act="dl" data-path="${esc(f.storage_path)}" data-name="${esc(f.file_name)}">Open</button>
-        ${mgr && !isClosed(j) && f.category !== 'Supporting Document' && f.id !== j.approved_file_id ? `<button class="primary" data-act="approve" data-id="${f.id}">Approve for Print</button>` : ''}</div></div></li>`).join('')}</ul>` : '<p class="note">No files yet.</p>'}
+        <div class="actions"><button data-act="dl" data-path="${esc(f.storage_path)}" data-mime="${esc(f.mime_type || '')}" data-name="${esc(f.file_name)}">Open</button>
+        ${canApproveArtwork() && !isClosed(j) && f.category !== 'Supporting Document' && f.id !== j.approved_file_id ? `<button class="primary" data-act="approve" data-id="${f.id}">Approve for Print</button>` : ''}</div></div></li>`).join('')}</ul>` : '<p class="note">No files yet.</p>'}
       ${mgr && j.approved_file_id && !isClosed(j) ? '<div class="actions"><button data-act="unapprove">Withdraw approval…</button></div>' : ''}
       ${!isClosed(j) ? `<form id="upf" class="uploadbox"><div class="grid2"><label>File<input type="file" name="file" required></label>
         <label>Type<select name="cat"><option>Customer Original</option><option>Artwork Revision</option>${(mgr || fd) ? '<option>Production Approved</option>' : ''}<option>Supporting Document</option></select></label></div>
@@ -500,11 +502,10 @@ async function viewJob(id) {
     if (act === 'dl') {
       const { data, error: er } = await sb.storage.from('job-files').createSignedUrl(b.dataset.path, 120);
       if (er) return (document.getElementById('je').textContent = friendly(er));
-      // Pictures open large inside PressGO. Other files (PDF, Word, etc.) still open outside, because PressGO cannot show them.
-      if (/\.(png|jpe?g|gif|webp|bmp|avif)$/i.test(b.dataset.name || '') && window.pgLightbox) return window.pgLightbox.open(data.signedUrl, b.dataset.name);
-      return window.open(data.signedUrl, '_blank', 'noopener');
+      if ((/^image\//i.test(b.dataset.mime || '') || /\.(jpe?g|png|gif|webp|avif|bmp|svg)$/i.test(b.dataset.name || '')) && window.pgViewImage) return window.pgViewImage(data.signedUrl, b.dataset.name);   // pictures open in the in-app viewer
+      return window.open(data.signedUrl, '_blank', 'noopener');   // other file types (PDF etc.) are unchanged
     }
-    if (act === 'approve') return run(call('approve_artwork', { p_job: id, p_version: j.version, p_file: bid }));
+    if (act === 'approve') { if (!canApproveArtwork()) return alert2('Only Front Desk or a manager can approve artwork.'); return run(call('approve_artwork', { p_job: id, p_version: j.version, p_file: bid })); }
     if (act === 'unapprove') { const r = await reasonDlg('Withdraw artwork approval — why?'); if (r) run(call('withdraw_artwork_approval', { p_job: id, p_version: j.version, p_reason: r.reason })); }
     if (act === 'raise') {
       const r = await ask('Report a problem', `<label>What kind?<select name="kind">${['Missing artwork', 'Waiting on customer', 'Material shortage', 'Machine problem', 'Quality problem', 'Other'].map((k) => `<option>${k}</option>`).join('')}</select></label>

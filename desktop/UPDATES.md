@@ -64,9 +64,7 @@ for updates in a local folder instead of GitHub. Build version 1.1.0 and 1.1.1 w
 `node try-serve.js 1.1.1 --tamper` offers the same update with a deliberately broken checksum, which must be rejected.
 
 ## Picture preview
-Clicking a picture in PressGO opens it large inside PressGO (`docs/lightbox.js`). Pictures opt in with `data-zoom`.
-Chat pictures used to be wrapped in a link that opened a new window, and the desktop app sends every new window
-to the normal browser (`setWindowOpenHandler` in `main.js`); that is why they opened in Chrome or Edge.
-The link wrapper is gone. Artwork files named .png/.jpg/.jpeg/.gif/.webp/.bmp/.avif also preview in PressGO;
-PDFs and other files still open outside because PressGO cannot display them.
-`node try-serve.js 1.1.1 --images` shows a local test page for this.
+Pictures open in an in-app viewer (`pgViewImage` in `docs/chat.js`), used by chat pictures and image files on a job.
+The desktop app sends every new browser window to your normal browser, which is why pictures wrapped in
+`target="_blank"` links used to open in Chrome or Edge.
+
