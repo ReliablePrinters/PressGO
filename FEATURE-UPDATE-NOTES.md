@@ -109,3 +109,52 @@ alter table pressgo.jobs enable trigger jobs_frozen;
 5. **Apply to the live project**, in the SQL editor, one file at a time and in order: `0015_avatars.sql`, `0016_preferences.sql`, `0017_delete_job.sql`. Run the section 11 checks again. The old web app keeps working at this point.
 6. **Publish:** merge the pull request into `main` (GitHub Pages then serves the new `docs/`). Hard-refresh once; `docs/sw.js` has a new version so cached copies are replaced.
 7. Smoke test on the live site with a manager account: set a picture, change the look, paste a picture on a test job, create and delete a test job. If anything is wrong, use the rollback notes above and revert the merge.
+
+## Manual checklist: real Ctrl+V, and the checks only the live system can answer
+
+**Why this section exists.** The automated tests and the isolated browser tests (a fake in-memory backend, no Supabase) could not check three things: (1) a genuine Ctrl+V from the operating system's clipboard (the testing tool's keystroke does not trigger a paste), (2) real sign-in, and (3) real Supabase Storage permissions and server behaviour. **No separate Supabase test project is available** (both free-plan project slots are in use), so step 3 of the runbook above ("rehearse on a separate Supabase test project") cannot be done as written. Unless you choose to create one (a second free Supabase account, or a paid upgrade; both are your decision), parts B and C below are done on the live project **right after the migrations are applied and the app is published**, using clearly named test data, and a failure means "stop and roll back" (see the rollback notes above).
+
+Fill in the Pass / Fail column as you go. To make a harmless picture: on Windows press **Windows key + Shift + S** and drag a small box over any empty part of the screen (this copies the picture to the clipboard without saving a file); on a Mac press **Command + Control + Shift + 4**. Never use a screenshot that shows customer details or passwords.
+
+### Part A - genuine Ctrl+V (repeat in Chrome, Edge and the PressGO desktop app)
+Use a throw-away job (create one called `ZZ TEST - delete me`). Files uploaded to a job are kept permanently, so do this only on that test job.
+
+| # | Do this | You should see | Pass / Fail |
+|---|---|---|---|
+| A1 | Open the test job and scroll to **Files**. Take a screenshot with the shortcut above. Click the dashed **Paste a picture** box once, then press **Ctrl+V** (Command+V on a Mac). | A preview of your screenshot appears under the box, titled "Pasted picture, not uploaded yet", with a file name like `pasted-image-20261020-143005.png` and a **Remove** button. The file box above also shows that name. | |
+| A2 | Press **Ctrl+V** again straight away, then once more a few seconds later. | Still ONE preview and one file in the box (the box holds one file). No second picture appears. | |
+| A3 | Click **Remove**. | The preview disappears and the file box says "No file chosen". | |
+| A4 | Paste again, set **Type** to "Supporting Document", press **Upload** (try double-clicking it quickly). | The page reloads showing exactly ONE new file named `pasted-image-...png` under Files, with the type you chose. Click **Open**: the picture opens in the viewer and is your screenshot. | |
+| A5 | Paste a picture, then choose a different file with **Choose file** instead. | The pasted preview disappears; the file you chose is the one that uploads. | |
+| A6 | Copy ordinary text from anywhere (not a picture), click the paste box, press **Ctrl+V**. | Nothing happens in the upload box (no preview, no error). Pasting text in other places (for example the chat message box) still works as before. | |
+| A7 | In File Explorer, copy a small picture FILE (Ctrl+C), click the paste box, press Ctrl+V. | It is staged like a screenshot (preview appears). If a browser does not allow this, write it down here; it is not a failure of the feature. | |
+| A8 | Open a **Collected** or **Cancelled** job. | No upload box and no paste box at all. | |
+
+### Part B - right after applying 0015, 0016 and 0017 (before publishing the app)
+| # | Do this | You should see | Pass / Fail |
+|---|---|---|---|
+| B1 | In the Supabase SQL editor of the live project, run `supabase/checks/verify_release.sql` (it only reads settings; it changes nothing). | All 16 rows say `ok = true` (19 tables, 31 policies, 21 triggers, 54 functions, no table without row security, no write rights for signed-in or anonymous users, 3 private buckets, avatars limited to 2 MB and JPEG/PNG/WebP, 3 avatars policies, no update policy on avatars). | |
+| B2 | Dashboard > Storage: open the `avatars` bucket settings and its policies. | Not public; limit 2 MB; allowed types JPEG, PNG, WebP. Policies `pressgo avatars read`, `pressgo avatars add`, `pressgo avatars tidy`, and nothing that allows UPDATE. | |
+| B3 | Sign in to the OLD (not yet updated) app as a manager and as a plain staff member; open a job, send a chat message, upload a normal file. | Everything still works (the old app keeps working with the new database). | |
+
+### Part C - after the new app is published: real sign-in, storage and server rules
+Create three test people on the Staff screen first (for example `zz-manager` with Manager, `zz-front` with Front Desk, `zz-staff` with no role, each in a department) and disable them afterwards. Never use real staff passwords.
+
+| # | Do this | You should see | Pass / Fail |
+|---|---|---|---|
+| C1 | Sign in as `zz-staff`. Sidebar > **My profile** > choose a picture > Save. | "Profile saved." Your circle shows the picture (cropped square) in the sidebar. | |
+| C2 | Sign in as `zz-front` (second browser or private window) and open a chat where `zz-staff` wrote, or the Staff screen as the manager. | `zz-staff`'s picture is shown next to their name. People without a picture show coloured initials. | |
+| C3 | As `zz-staff`, replace the picture, then use **Remove my picture**. | The change appears for everyone within about 5 minutes (or after a refresh); after removing, initials return. In Dashboard > Storage > `avatars` there is one folder per person (named by employee id) and the old files were tidied away. | |
+| C4 | Copy a picture's address (right-click the picture > Copy image address) and paste it into a private window where you are NOT signed in. | The picture does not load (private bucket; the address also stops working after about an hour). | |
+| C5 | As `zz-staff`, choose Dark + Teal and Save. Sign out. Sign in on a different browser or computer. | Dark + Teal are restored automatically. "Match my computer" follows the computer's own light or dark setting. | |
+| C6 | As `zz-front`, create a job (they become its creator) and open it while it is New. | A red **Delete job...** button is visible. As `zz-staff` (not the creator), open the same job if you can see it: no Delete button. | |
+| C7 | As `zz-front`, press **Delete job...** and type only spaces as the reason, with the right job number. | The dialog stays open and says "Please give a real reason". Nothing is deleted. | |
+| C8 | Type a real reason and the job number, press **Delete job**. | "Job #... was deleted." and you return to the Jobs list. The job is gone from the lists of `zz-front`, `zz-staff` and the manager. If the job had an owner, the owner got an alert. | |
+| C9 | As `zz-front`, create another job, move it to In Production (or ask the manager to), then open it as `zz-front`. | No Delete button for `zz-front`. As `zz-manager` the Delete button is there. | |
+| C10 | In the Supabase SQL editor run this read-only query: `select job_number, customer_name, deleted_at, delete_reason from pressgo.jobs where deleted_at is not null;` | The deleted test job is listed with the reason you typed (trimmed). Its files, chat and history are still in the database. | |
+| C11 | As `zz-front`, try to open the deleted job's address, or search for it. | "You don't have access", and it is not in any list. | |
+| C12 | Quick regression of existing features with the three test people: send and delete a chat message, upload a normal file, approve artwork as `zz-front` (allowed) and as `zz-staff` (refused), cancel a job as the manager. | All as before the update. | |
+
+**Stop and roll back if:** any row in Part B fails; a plain staff member can delete someone else's job, see a deleted job, or change another person's picture or look; pictures can be opened without signing in; or an existing feature (chat, files, job moves) stops working. Use the rollback notes above and tell whoever manages the project before trying again.
+
+**A small known gap.** The delete dialog refuses a blank reason (`docs/reason.js`), and the database refuses one too, but the database trims only ordinary spaces: a reason made only of tabs or line breaks would pass the database check if someone called the function directly instead of using the screen. Staff using the app are blocked by the screen, and it is not a security problem (that person was already allowed to delete), but it can be tightened in `0017_delete_job.sql` before that file is applied if you want.

@@ -457,14 +457,19 @@ async function viewJob(id) {
     if (b.id === 'cnl') { const r = await reasonDlg('Cancel this job — why?'); if (r) run(call('transition_job', { p_job: id, p_version: j.version, p_to: 'Cancelled', p_reason: r.reason })); }
     if (b.id === 'deljob') {
       const nf = (files || []).length;
-      const r = await ask('Delete this job?', `<div class="djob"><b>#${j.job_number} · ${esc(j.customer_name)}</b><div>${esc(j.description)}</div><div class="note">${esc(j.lifecycle_status)} · due ${esc(fmt(j.due_at))}</div></div>
+      const asked = ask('Delete this job?', `<div class="djob"><b>#${j.job_number} · ${esc(j.customer_name)}</b><div>${esc(j.description)}</div><div class="note">${esc(j.lifecycle_status)} · due ${esc(fmt(j.due_at))}</div></div>
         <p>This job will disappear for everyone. Its history${nf ? `, ${nf} file${nf === 1 ? '' : 's'}` : ''} and chat are kept safely in the database but can no longer be opened from PressGO. This cannot be undone from the app.</p>
         <label>Why is it being deleted? (saved in the record)<textarea name="reason" rows="2" required maxlength="500"></textarea></label>
         <label>To confirm, type the job number <b>${j.job_number}</b><input name="confirm" required inputmode="numeric" autocomplete="off" pattern="${j.job_number}"></label>`, 'Delete job');
+      // a reason of only spaces is refused here (the dialog stays open with "Please give a real reason"); the database refuses it too
+      if (window.pgReason) window.pgReason.guard(dlg.querySelector('[name=reason]'));
+      const r = await asked;
       if (!r) return;
+      const why = window.pgReason ? window.pgReason.check(r.reason) : { ok: !!String(r.reason || '').trim(), value: String(r.reason || '').trim() };
+      if (!why.ok) return toast('Please give a real reason. Nothing was deleted.', 'error');
       if (String(r.confirm || '').trim() !== String(j.job_number)) return toast('That was not the job number. Nothing was deleted.', 'error');
       try {
-        await call('delete_job', { p_job: id, p_version: j.version, p_reason: r.reason });
+        await call('delete_job', { p_job: id, p_version: j.version, p_reason: why.value });   // the trimmed reason is what is sent
         toast(`Job #${j.job_number} was deleted.`);
         location.hash = '#/jobs';
       } catch (err) {
