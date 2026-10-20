@@ -62,8 +62,13 @@ Apply these files from `supabase/migrations/` **in this order, each exactly once
 | 12 | `0012_break_status.sql` | "On break" status |
 | 13 | `0013_close_direct_writes.sql` | Removes direct table writes for signed-in and anonymous users; all changes go through the checked functions |
 | 14 | `0014_artwork_approval_roles.sql` | Artwork approval ("Approved for Print") is limited to Front Desk and managers; withdrawing approval stays manager-only |
+| 15 | `0015_avatars.sql` | **NOT YET APPLIED to the live database.** Profile pictures: table `employee_avatars`, `set_avatar()` / `remove_avatar()`, private bucket `avatars` (2 MB; JPEG, PNG, WebP) and its storage policies |
+| 16 | `0016_preferences.sql` | **NOT YET APPLIED to the live database.** Personal look (appearance + accent colour): table `employee_preferences`, `set_preferences()` |
+| 17 | `0017_delete_job.sql` | **NOT YET APPLIED to the live database.** Deleting a job (hidden and locked, never erased): `jobs.deleted_at/deleted_by/delete_reason`, `delete_job()`, changes `can_view_job()` and `check_job_assignee()`, adds trigger `jobs_frozen`. See `FEATURE-UPDATE-NOTES.md` |
 
 **There is no migration-tracking table.** Nothing in the database records which files were applied. Keep a note of the last file you ran.
+
+**Counts after 0015–0017 (checked locally only, in a throwaway Postgres built from the migrations; the live database has not had them applied):** 19 tables, 31 policies, 21 triggers, 54 functions, still no table without row security and no write privileges for `authenticated` / `anon` / `PUBLIC`. The VERIFIED statement below is about 0001–0014 only.
 
 **Proof the files alone rebuild the schema (VERIFIED):** applying 0001–0014 to an empty PostgreSQL 16 database (with `supabase/tests/local_stub.sql` standing in for Supabase's `auth`/`storage`) produces exactly what the live database has: 17 tables, 29 policies, 20 triggers, 48 functions, row-level security on every table, 4 departments, and no write privileges for the `authenticated` / `anon` roles.
 
@@ -124,11 +129,13 @@ Both buckets are created by the migrations, so a rebuild gets them automatically
 |---|---|---|---|---|
 | `job-files` | `0003` | No (private) | 100 MB | Any |
 | `chat-files` | `0009` | No (private) | 10 MB | `image/jpeg`, `image/png`, `image/webp`, `image/gif`, `image/heic` |
+| `avatars` | `0015` (**not yet applied live**) | No (private) | 2 MB | `image/jpeg`, `image/png`, `image/webp` |
 
 Storage policies (all on `storage.objects`, role `authenticated`, VERIFIED; there are no update or delete policies, so uploads are permanent):
 
 - `pressgo job files read` / `pressgo job files add`: allowed when `pressgo.can_view_job(pressgo._job_from_path(name))` (the first folder in the file path is the job id).
 - `pressgo chat files read` / `pressgo chat files add`: allowed when `pressgo.can_read_conversation(pressgo._conv_from_path(name))` (the first folder is the chat id).
+- From `0015` (**not yet applied live; not verified on Supabase, only against the local stub**): `pressgo avatars read` (any active staff member), `pressgo avatars add` and `pressgo avatars tidy` (insert / delete, only when the first folder is your own employee id). There is no update policy, so a picture can never be overwritten; the earlier statement that there are no delete policies stops being true once `0015` is applied.
 
 Other storage settings (VERIFIED): global file size limit **50 MB** (fixed on the Free plan, so the 100 MB `job-files` limit cannot actually be reached), image transformation off.
 

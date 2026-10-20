@@ -20,4 +20,4 @@ create table storage.objects (id uuid primary key default gen_random_uuid(), buc
 alter table storage.objects enable row level security;
 create or replace function storage.foldername(name text) returns text[] language sql as $$ select string_to_array(name, '/') $$;
 grant usage on schema storage to authenticated;
-grant select, insert on storage.objects to authenticated;
+grant select, insert, delete on storage.objects to authenticated;   -- delete is granted on real Supabase too; the policies decide who may use it

@@ -65,7 +65,8 @@
 
   const color = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 55% 46%)`; };
   const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
-  const avatar = (n, s) => `<span class="av ${stClass(n)}" data-n="${esc(n)}" style="background:${color(n)}${s ? `;width:${s}px;height:${s}px;font-size:${Math.max(9, Math.round(s * 0.38))}px` : ''}" title="${esc(n)}">${esc(initials(n))}</span>`;
+  // The coloured initials circle is the default avatar. If this person has set a picture (see profile.js) it is drawn on top of the circle.
+  const avatar = (n, s) => { const pic = window.pgAvatarUrl ? window.pgAvatarUrl(n) : null; return `<span class="av ${stClass(n)}" data-n="${esc(n)}" style="background:${color(n)}${s ? `;width:${s}px;height:${s}px;font-size:${Math.max(9, Math.round(s * 0.38))}px` : ''}" title="${esc(n)}">${esc(initials(n))}${pic ? `<img src="${esc(pic)}" alt="" draggable="false">` : ''}</span>`; };
   window.pgAvatar = avatar;
   const timeOf = (d) => new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const dayLabel = (d) => {

@@ -81,7 +81,7 @@ window.pgUI = { ic, stBadge, dueCell, emptyState, LOADING, rel };
 // ---------------------------------------------------------------- small helpers
 function ask(title, fields, okLabel = 'OK') {
   return new Promise((resolve) => {
-    const danger = /^(cancel this job|delete this message|take back|move job back|withdraw)/i.test(title);
+    const danger = /^(cancel this job|delete this job|delete this message|take back|move job back|withdraw)/i.test(title);
     dlg.className = danger ? 'danger' : '';
     dlg.innerHTML = `<form method="dialog" class="dlg"><div class="dh"><h3>${esc(title)}</h3></div><div class="db">${fields}</div>
       <div class="df"><button type="button" id="dx">Cancel</button><button class="primary ${danger ? 'danger' : ''}" value="ok">${esc(okLabel)}</button></div></form>`;
@@ -135,6 +135,7 @@ async function loadMe(session) {
   const { data: mem } = await sb.from('department_memberships').select('department_id').eq('employee_id', emp.id).is('ended_at', null);
   myDepts = new Set((mem || []).map((m) => m.department_id));
   window.onhashchange = route;
+  if (window.pgProfile) window.pgProfile.init();   // this person's saved look and everyone's profile pictures
   route();
 }
 function showLogin(msg = '') {
@@ -173,7 +174,7 @@ function shell(active, inner) {
       ${me.manager_role ? `<h4>Admin</h4>${nav('#/staff', 'staff', 'Staff', 'users')}` : ''}
       <div id="sidechats"></div></div>
     <div class="foot"><div class="me2">${window.pgAvatar(me.display_name, 36)}<div><b>${esc(me.display_name)}</b><div class="note">${esc(roles)}</div></div></div>
-      <div class="actions"><button id="cpw">Change password</button><button id="so">Sign out</button>${window.pgNotify ? '<button id="nfy" style="flex-basis:100%">Notifications</button>' : ''}</div></div></aside>
+      <div class="actions"><button id="prof">My profile</button><button id="cpw">Change password</button><button id="so">Sign out</button>${window.pgNotify ? '<button id="nfy" style="flex-basis:100%">Notifications</button>' : ''}</div></div></aside>
     <div class="content"><main>${inner}</main></div></div>`;
   const box = document.getElementById('appbox');
   document.getElementById('burger').onclick = () => box.classList.toggle('nav-open');
@@ -187,7 +188,8 @@ function shell(active, inner) {
     const { error } = await sb.auth.updateUser({ password: r.p1 });
     error ? toast(error.message, 'error') : toast('Your password has been changed.');
   };
-  document.getElementById('so').onclick = async () => { await sb.auth.signOut(); me = null; showLogin(); };
+  document.getElementById('so').onclick = async () => { await sb.auth.signOut(); me = null; if (window.pgProfile) window.pgProfile.reset(); showLogin(); };
+  document.getElementById('prof').onclick = () => window.pgProfile && window.pgProfile.open();
   const nfy = document.getElementById('nfy'); if (nfy) nfy.onclick = () => window.pgNotify.settings(me);
 }
 function route() {
@@ -353,6 +355,8 @@ async function viewJob(id) {
   if (error || !j) return shell('jobs', '<div class="card"><h2>You don\'t have access</h2><p class="note">This job doesn\'t exist or isn\'t available to you.</p><a href="#/jobs">Back to jobs</a></div>');
 
   const mgr = me.manager_role, fd = me.front_desk, owner = j.current_assignee_id === me.id;
+  // Delete job: a manager, or the person who created it while it has not started production. The database enforces the same rule in delete_job().
+  const canDelete = !!mgr || (j.created_by === me.id && ['New', 'Queued', 'Cancelled'].includes(j.lifecycle_status));
   const acts = [];
   const move = (to, label, cls = '', needReason = false) => acts.push({ to, label, cls, needReason });
   if (!isClosed(j)) {
@@ -399,7 +403,8 @@ async function viewJob(id) {
         ${!isClosed(j) && (mgr || fd) ? '<button id="asg">Assign…</button><button id="edt">Edit details</button>' : ''}
         ${mgr && !isClosed(j) ? '<button id="cnl" class="danger">Cancel job</button>' : ''}
         ${mgr && idx > 0 && !isClosed(j) ? '<button id="back">Move back…</button>' : ''}
-        ${mgr && isClosed(j) ? '<button id="reopen">Reopen…</button>' : ''}</div></div>
+        ${mgr && isClosed(j) ? '<button id="reopen">Reopen…</button>' : ''}
+        ${canDelete ? '<button id="deljob" class="danger">Delete job…</button>' : ''}</div></div>
     <div id="j3">
     ${pending ? `<div class="card notice"><h3 style="margin-top:0">Handoff waiting</h3>
       <p>${esc(pending.sender?.display_name || 'Someone')} sent this job from <b>${esc(deptName(pending.from_department_id))}</b> to <b>${esc(deptName(pending.to_department_id))}</b>: <i>${esc(pending.note)}</i></p>
@@ -420,6 +425,8 @@ async function viewJob(id) {
       ${mgr && j.approved_file_id && !isClosed(j) ? '<div class="actions"><button data-act="unapprove">Withdraw approval…</button></div>' : ''}
       ${!isClosed(j) ? `<form id="upf" class="uploadbox"><div class="grid2"><label>File<input type="file" name="file" required></label>
         <label>Type<select name="cat"><option>Customer Original</option><option>Artwork Revision</option>${(mgr || fd) ? '<option>Production Approved</option>' : ''}<option>Supporting Document</option></select></label></div>
+        <div class="pastezone" id="pz" tabindex="0" role="group" aria-label="Paste a picture. Click here, then press Control and V."><b>Paste a picture</b><span>Copied a picture or screenshot? Click here, then press <kbd>Ctrl</kbd> + <kbd>V</kbd> (<kbd>⌘</kbd> + <kbd>V</kbd> on a Mac).</span></div>
+        <div class="pastepreview" id="pp" role="status" hidden></div>
         <div class="note">Files are private to staff who can see this job. Up to 100 MB. They are kept permanently; a new upload becomes a new version.</div>
         <div class="err" id="ue"></div><div class="actions"><button class="primary" id="ub" type="submit">Upload</button></div></form>` : ''}</div>
     ${!isClosed(j) && !pending && (owner || mgr || fd) ? `<div class="card"><h3 style="margin-top:0">Hand off</h3><p class="note">Send this job to another department. They must accept it.</p>
@@ -448,6 +455,24 @@ async function viewJob(id) {
       return run(call('transition_job', { p_job: id, p_version: j.version, p_to: a.to, p_reason: reason }));
     }
     if (b.id === 'cnl') { const r = await reasonDlg('Cancel this job — why?'); if (r) run(call('transition_job', { p_job: id, p_version: j.version, p_to: 'Cancelled', p_reason: r.reason })); }
+    if (b.id === 'deljob') {
+      const nf = (files || []).length;
+      const r = await ask('Delete this job?', `<div class="djob"><b>#${j.job_number} · ${esc(j.customer_name)}</b><div>${esc(j.description)}</div><div class="note">${esc(j.lifecycle_status)} · due ${esc(fmt(j.due_at))}</div></div>
+        <p>This job will disappear for everyone. Its history${nf ? `, ${nf} file${nf === 1 ? '' : 's'}` : ''} and chat are kept safely in the database but can no longer be opened from PressGO. This cannot be undone from the app.</p>
+        <label>Why is it being deleted? (saved in the record)<textarea name="reason" rows="2" required maxlength="500"></textarea></label>
+        <label>To confirm, type the job number <b>${j.job_number}</b><input name="confirm" required inputmode="numeric" autocomplete="off" pattern="${j.job_number}"></label>`, 'Delete job');
+      if (!r) return;
+      if (String(r.confirm || '').trim() !== String(j.job_number)) return toast('That was not the job number. Nothing was deleted.', 'error');
+      try {
+        await call('delete_job', { p_job: id, p_version: j.version, p_reason: r.reason });
+        toast(`Job #${j.job_number} was deleted.`);
+        location.hash = '#/jobs';
+      } catch (err) {
+        const m = friendly(err);
+        document.getElementById('je').textContent = err.code === '40001' || /version conflict/.test(m) ? 'Someone else just changed this job. It has been refreshed — please check and try again.' : m;
+        if (err.code === '40001' || /version conflict/.test(m)) setTimeout(() => viewJob(id), 1500);
+      }
+    }
     if (b.id === 'reopen') {
       const r = await ask('Reopen job', `<label>Reopen to<select name="to"><option>Queued</option><option>New</option>${j.lifecycle_status === 'Collected' ? '<option>Ready for Collection</option>' : ''}</select></label><label>Reason<textarea name="reason" rows="2" required></textarea></label>`, 'Reopen');
       if (r) run(call('transition_job', { p_job: id, p_version: j.version, p_to: r.to, p_reason: r.reason }));
@@ -479,12 +504,35 @@ async function viewJob(id) {
 
   const inline = (title, body, ok) => ask(title, body, ok);
   const upf = document.getElementById('upf');
+  // Paste a picture: Ctrl+V while anything in the upload box has focus puts the picture in the normal file box (with a preview you can remove).
+  // It then goes through the same Upload button and checks as a chosen file. See pastefile.js.
+  let uploading = false, clearPaste = () => {};
+  if (upf && window.pgPaste) {
+    const pp = document.getElementById('pp'), ue0 = document.getElementById('ue');
+    let staged = null, previewUrl = null;
+    clearPaste = () => { if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = null; staged = null; pp.hidden = true; pp.innerHTML = ''; };
+    const stage = (file) => {
+      try {
+        const dt = new DataTransfer(); dt.items.add(file); upf.file.files = dt.files;
+      } catch (err) { ue0.textContent = 'This browser cannot paste a picture here. Use Choose file instead.'; return; }
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      staged = upf.file.files[0]; previewUrl = URL.createObjectURL(file); ue0.textContent = '';
+      pp.hidden = false;
+      pp.innerHTML = `<img src="${esc(previewUrl)}" alt="Preview of the pasted picture"><div class="pi"><b>Pasted picture, not uploaded yet</b>${esc(file.name)} · ${esc(size(file.size))}</div><button type="button" id="ppx">Remove</button>`;
+      pp.querySelector('#ppx').onclick = () => { upf.file.value = ''; clearPaste(); document.getElementById('pz').focus(); };
+    };
+    // choosing a different file with the normal file box replaces the pasted picture
+    upf.file.addEventListener('change', () => { if (staged && upf.file.files[0] !== staged) clearPaste(); });
+    window.pgPaste.wire(upf, { onFile: stage, onReject: (m) => { ue0.textContent = m; }, isBusy: () => uploading });
+  }
   if (upf) upf.onsubmit = async (e) => {
     e.preventDefault();
+    if (uploading) return;                                          // never upload the same thing twice
     const file = upf.file.files[0]; const ub = document.getElementById('ub'); const ue = document.getElementById('ue');
     ue.textContent = '';
     if (!file) return;
     if (file.size > 104857600) return (ue.textContent = 'That file is over 100 MB.');
+    uploading = true;
     ub.disabled = true; ub.textContent = 'Uploading…';
     const safe = file.name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);
     const path = `${id}/${crypto.randomUUID()}-${safe}`;
@@ -492,8 +540,9 @@ async function viewJob(id) {
       const up = await sb.storage.from('job-files').upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
       if (up.error) throw up.error;
       await call('register_file', { p_job: id, p_category: upf.cat.value, p_name: file.name, p_mime: file.type || null, p_size: file.size, p_path: path });
+      clearPaste();
       viewJob(id);
-    } catch (err) { ue.textContent = friendly(err); ub.disabled = false; ub.textContent = 'Upload'; }
+    } catch (err) { ue.textContent = friendly(err); ub.disabled = false; ub.textContent = 'Upload'; uploading = false; }
   };
   const j3 = document.getElementById('j3');
   j3.onclick = async (e) => {
@@ -524,5 +573,5 @@ async function viewJob(id) {
   };
 }
 
-sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; } });
+sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; if (window.pgProfile) window.pgProfile.reset(); } });
 start();
