@@ -43,7 +43,7 @@ I looked at everything that points at a job before deciding:
 
 Erasing the row would conflict with the "permanent record" rules (or orphan data), so I did **not** weaken them. Instead, deleting works the way deleting a chat message already does:
 
-- `delete_job(job, version, reason)` marks the job deleted (`deleted_at`, `deleted_by`, `delete_reason`). It disappears for **everyone** (even managers) because `can_view_job()` now excludes deleted jobs, and its files, problems, handoffs, history, tasks and chat disappear from view with it (the stored files can no longer be opened).
+- `delete_job(job, version, reason)` marks the job deleted (`deleted_at`, `deleted_by`, `delete_reason`). It disappears from every list and screen for **everyone, managers included**, because `can_view_job()` now excludes deleted jobs, and its files, problems, handoffs, tasks and chat disappear from view with it (the stored files can no longer be opened). One thing is deliberately NOT hidden: managers can still read the job's audit-history rows (which hold copies of its details), because the existing audit rule already lets managers read all history. Plain staff cannot.
 - It is **frozen**: a trigger refuses any later change (edit, assign, move, approve artwork, accept a handoff…) even if called directly. The job row can never be erased (trigger).
 - **Nothing is lost**: all rows and stored files remain; the audit history gets a `job.deleted` record (who, when, why) that managers can still read through the audit table.
 - **Who may delete (checked in the database):** a **manager** — any job, any status; the **person who created the job** — only while it is New, Queued or Cancelled (not yet started production). Everyone else, including Front Desk who did not create it, the assigned owner, and anyone who cannot see the job, is refused. A reason (up to 500 characters) is required. Stale screens are refused (version check). The job's owner is sent an alert (no link, since the job is gone).
@@ -104,8 +104,8 @@ alter table pressgo.jobs enable trigger jobs_frozen;
 
 1. **Back up the live project first.** Follow `REBUILD.md` section 12.1. The dashboard-only method needs no password. If you use `pg_dump`, keep the connection string in an environment variable and never in a file in this repository. Download both Storage buckets too. Confirm the backup files open and have sensible sizes.
 2. **Merge nothing to `main` yet.** GitHub Pages publishes `docs/` from `main`, and the new screens call database functions that do not exist until step 5. This update lives on the branch `feature/profile-look-paste-delete`.
-3. **Rehearse on a separate Supabase test project (not the live one).** Create a new free project, then run `0001` to `0017` in order in its SQL editor and the checks in `REBUILD.md` section 11 (expect 19 / 31 / 21 / 54, no table without row security, 0 write privileges for `authenticated` / `anon` / `PUBLIC`, three private buckets). Check in Storage that the `avatars` bucket is private with a 2 MB limit and three policies named `pressgo avatars …`. Point a copy of `docs/config.js` at the test project (never commit that), create a manager and two staff, and go through the manual checklist above. Pay special attention to what the local stub cannot prove: real Storage rules (own folder only), real sign-in, and deleting a job as each role.
-4. If the rehearsal is clean, open a pull request from the branch and review the diff once more.
+3. **Rehearsal on a separate Supabase test project: NOT currently possible** (both free-plan project slots are in use; a second free account or a paid upgrade would be the owner's decision, see the checklist section). Without one, do these instead, in order: (a) the **pre-apply drift check** below (a read-only query on the live project, which needs the owner's explicit approval each time); (b) a **fresh backup** taken just before applying, in a quiet period; (c) apply the migrations and run Part B of the manual checklist immediately, with the rollback notes ready; (d) publish the app only if Part B passes, then do Part C. What the local stand-in cannot prove stays unproven until then: real Storage rules (own folder only), real sign-in, and deleting a job as each role.
+4. Open a pull request from the branch and review the diff once more (do not merge it yet).
 5. **Apply to the live project**, in the SQL editor, one file at a time and in order: `0015_avatars.sql`, `0016_preferences.sql`, `0017_delete_job.sql`. Run the section 11 checks again. The old web app keeps working at this point.
 6. **Publish:** merge the pull request into `main` (GitHub Pages then serves the new `docs/`). Hard-refresh once; `docs/sw.js` has a new version so cached copies are replaced.
 7. Smoke test on the live site with a manager account: set a picture, change the look, paste a picture on a test job, create and delete a test job. If anything is wrong, use the rollback notes above and revert the merge.
@@ -133,7 +133,7 @@ Use a throw-away job (create one called `ZZ TEST - delete me`). Files uploaded t
 ### Part B - right after applying 0015, 0016 and 0017 (before publishing the app)
 | # | Do this | You should see | Pass / Fail |
 |---|---|---|---|
-| B1 | In the Supabase SQL editor of the live project, run `supabase/checks/verify_release.sql` (it only reads settings; it changes nothing). | All 16 rows say `ok = true` (19 tables, 31 policies, 21 triggers, 54 functions, no table without row security, no write rights for signed-in or anonymous users, 3 private buckets, avatars limited to 2 MB and JPEG/PNG/WebP, 3 avatars policies, no update policy on avatars). | |
+| B1 | In the Supabase SQL editor of the live project, run `supabase/checks/verify_release.sql` (it only reads settings; it changes nothing). | The 27 rows marked `required` all say `ok = true` (counts 19 / 31 / 21 / 54, row security everywhere, no write rights for signed-in or anonymous users, the new functions not runnable by anonymous people and running with a fixed `search_path`, the delete lock switched on, the preferences/avatars/storage rules as reviewed, 3 private buckets, avatars limited to 2 MB and JPEG/PNG/WebP). The 10 rows marked `advisory` are fingerprints of the new and replaced functions and of all functions and policies: `ok = true` is expected, and a `false` means "something differs from the reviewed repository: look at it before going on", not automatically a fault (a different PostgreSQL formatting can cause it). | |
 | B2 | Dashboard > Storage: open the `avatars` bucket settings and its policies. | Not public; limit 2 MB; allowed types JPEG, PNG, WebP. Policies `pressgo avatars read`, `pressgo avatars add`, `pressgo avatars tidy`, and nothing that allows UPDATE. | |
 | B3 | Sign in to the OLD (not yet updated) app as a manager and as a plain staff member; open a job, send a chat message, upload a normal file. | Everything still works (the old app keeps working with the new database). | |
 
@@ -157,4 +157,27 @@ Create three test people on the Staff screen first (for example `zz-manager` wit
 
 **Stop and roll back if:** any row in Part B fails; a plain staff member can delete someone else's job, see a deleted job, or change another person's picture or look; pictures can be opened without signing in; or an existing feature (chat, files, job moves) stops working. Use the rollback notes above and tell whoever manages the project before trying again.
 
-**A small known gap.** The delete dialog refuses a blank reason (`docs/reason.js`), and the database refuses one too, but the database trims only ordinary spaces: a reason made only of tabs or line breaks would pass the database check if someone called the function directly instead of using the screen. Staff using the app are blocked by the screen, and it is not a security problem (that person was already allowed to delete), but it can be tightened in `0017_delete_job.sql` before that file is applied if you want.
+**About blank deletion reasons.** The delete dialog refuses a blank reason (`docs/reason.js`) and the database refuses one too. `0017_delete_job.sql` now trims spaces, tabs, line breaks, no-break spaces and zero-width characters, so a reason made only of those is refused even if someone calls the function directly instead of using the screen, and the reason is stored trimmed (tested in `supabase/tests/0017_delete_job_test.sql`).
+
+### Pre-apply drift check (read-only query on the LIVE project; needs the owner's explicit approval)
+`0017` replaces two existing functions (`can_view_job` and `check_job_assignee`) with `create or replace`. If either was ever edited by hand on the live project, that edit would be overwritten without any message. Before applying, compare the live versions with what the repository's migrations 0001-0014 build:
+
+```sql
+select proname, md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) as fingerprint
+from pg_proc where pronamespace = 'pressgo'::regnamespace and proname in ('can_view_job', 'check_job_assignee')
+order by proname;
+```
+Expected: `can_view_job` = `34ae596ea2e3d7652256cf5dd9a8c788`, `check_job_assignee` = `3ab4bf0e0d58dba3a9f65c95b3230343`. For a wider check of everything that exists today (the live schema should equal 0001-0014 before 0015-0017 are applied), the same idea over all 48 functions and 29 policies:
+
+```sql
+select 'functions' as what, count(*) as n, md5(string_agg(x, ',' order by x collate "C")) as fingerprint from (
+  select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')=' || md5(regexp_replace(pg_get_functiondef(p.oid), '[[:space:]]+', ' ', 'g')) as x
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'pressgo') f
+union all
+select 'policies', count(*), md5(string_agg(x, ',' order by x collate "C")) from (
+  select tablename || '.' || policyname || '=' || md5(coalesce(cmd, '') || '|' || coalesce(array_to_string(roles, ','), '') || '|' || coalesce(qual, '') || '|' || coalesce(with_check, '')) as x
+  from pg_policies where schemaname = 'pressgo') p;
+```
+Expected: functions 48 / `f9f387bcb090de24d5b0794aa3cf3dba`, policies 29 / `647cec6344c5cf9bcd05eb96854eb888`.
+
+These fingerprints ignore line endings and spacing (every run of white space counts as one space): the live functions were pasted in from an editor whose line endings are not known, and a hash of the raw text would differ for that reason alone. How to read the result: a match is strong evidence the live functions and rules are the reviewed ones. A mismatch is NOT proof of tampering: these values were computed on a local PostgreSQL 17 engine, and a different server build can print a function's text slightly differently. If anything differs, compare that function's text with the repository before applying `0017`, and do not apply until the difference is understood. These queries only read; they change nothing and read no staff or job data.

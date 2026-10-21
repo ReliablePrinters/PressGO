@@ -100,6 +100,14 @@ select pg_temp.expect_error($$select pg_temp.del('Gamma', 'no')$$, 'started prod
 select pg_temp.expect_error($$select pg_temp.del('Acme', '')$$, 'reason is required', 'empty reason');
 select pg_temp.expect_error($$select pg_temp.del('Acme', '   ')$$, 'reason is required', 'blank reason');
 select pg_temp.expect_error($$select pg_temp.del('Acme', null)$$, 'reason is required', 'no reason');
+-- blanks of every kind are not a reason (built from character codes: 9 tab, 10 line feed, 13 carriage return, 160 no-break space,
+-- 8203 zero-width space, 8205 zero-width joiner, 8288 word joiner, 65279 byte-order mark)
+select pg_temp.expect_error($$select pg_temp.del('Acme', chr(9) || chr(10))$$, 'reason is required', 'only a tab and a line break');
+select pg_temp.expect_error($$select pg_temp.del('Acme', chr(13) || chr(10) || ' ' || chr(9))$$, 'reason is required', 'only carriage return, line feed, space and tab');
+select pg_temp.expect_error($$select pg_temp.del('Acme', chr(160) || chr(160))$$, 'reason is required', 'only no-break spaces');
+select pg_temp.expect_error($$select pg_temp.del('Acme', chr(8203) || chr(8205) || chr(8288) || chr(65279))$$, 'reason is required', 'only zero-width characters');
+select pg_temp.expect_error($$select pg_temp.del('Acme', ' ' || chr(9) || chr(160) || chr(8203) || chr(10) || ' ')$$, 'reason is required', 'a mix of every kind of blank');
+select pg_temp.expect_error($$select pg_temp.del('Acme', chr(9) || repeat('x', 501) || chr(10))$$, 'too long', 'too long even after trimming');
 select pg_temp.expect_error($$select pg_temp.del('Acme', repeat('x', 501))$$, 'too long', 'reason too long');
 select pg_temp.expect_error($$select delete_job(pg_temp.jid('Acme'), pg_temp.jv('Acme') - 1, 'stale screen')$$, 'version conflict', 'stale screen');
 select pg_temp.expect_error($$select delete_job('00000000-0000-0000-0000-00000000dead', 1, 'x')$$, 'job not found', 'unknown job');
@@ -201,7 +209,7 @@ end $$;
 -- ===== 5. the other allowed deletions
 set role authenticated;
 select pg_temp.as_user('10000000-0000-0000-0000-0000000000a2');
-select pg_temp.ok($$select pg_temp.del('Queued Co', 'duplicate order')$$, 'creator deletes a Queued job');
+select pg_temp.ok($$select pg_temp.del('Queued Co', '  duplicate order' || chr(9) || chr(160) || chr(10))$$, 'creator deletes a Queued job (reason padded with blanks of several kinds)');
 select pg_temp.ok($$select pg_temp.del('Cancelled Co', 'tidy up')$$, 'creator deletes a Cancelled job');
 select pg_temp.ok($$select pg_temp.del('Leaver Co', 'wrong customer')$$, 'a job whose owner has since been disabled can still be deleted');
 select pg_temp.as_user('10000000-0000-0000-0000-0000000000a1');
@@ -213,6 +221,9 @@ select pg_temp.expect_count($$select 1 from jobs$$, 0, 'every job is now hidden'
 reset role;
 select pg_temp.expect_count($$select 1 from jobs$$, 7, 'but all seven rows are still in the database');
 select pg_temp.expect_count($$select 1 from jobs where deleted_at is not null and deleted_by is not null and delete_reason is not null$$, 7, 'each carries who / when / why');
+select pg_temp.expect_count($$select 1 from jobs where customer_name = 'Queued Co' and delete_reason = 'duplicate order'$$, 1, 'the reason is stored trimmed, not as typed');
+select pg_temp.expect_count($$select 1 from audit_events where action = 'job.deleted' and reason = 'duplicate order'$$, 1, 'and so is the reason in the audit record');
+select pg_temp.expect_count($$select 1 from jobs where delete_reason <> btrim(delete_reason) or delete_reason ~ '^[[:space:]]' or delete_reason ~ '[[:space:]]$'$$, 0, 'no stored reason starts or ends with a blank');
 -- the next job number is not reused
 set role authenticated;
 select pg_temp.as_user('10000000-0000-0000-0000-0000000000a2');

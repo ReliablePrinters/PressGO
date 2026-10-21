@@ -131,7 +131,7 @@ Both buckets are created by the migrations, so a rebuild gets them automatically
 | `chat-files` | `0009` | No (private) | 10 MB | `image/jpeg`, `image/png`, `image/webp`, `image/gif`, `image/heic` |
 | `avatars` | `0015` (**not yet applied live**) | No (private) | 2 MB | `image/jpeg`, `image/png`, `image/webp` |
 
-Storage policies (all on `storage.objects`, role `authenticated`, VERIFIED; there are no update or delete policies, so uploads are permanent):
+Storage policies (all on `storage.objects`, role `authenticated`, VERIFIED on the live project for `job-files` and `chat-files`: there are no update or delete policies on those two buckets, so their uploads are permanent; migration `0015`, not yet applied live, adds a delete policy for the `avatars` bucket only, see the last bullet below):
 
 - `pressgo job files read` / `pressgo job files add`: allowed when `pressgo.can_view_job(pressgo._job_from_path(name))` (the first folder in the file path is the job id).
 - `pressgo chat files read` / `pressgo chat files add`: allowed when `pressgo.can_read_conversation(pressgo._conv_from_path(name))` (the first folder is the chat id).
@@ -237,7 +237,8 @@ Automated checks from a terminal (local PostgreSQL 16 or newer, no Supabase need
 
 - `bash supabase/tests/run_local.sh` runs every permission test against a throwaway database (look for the `PASSED` lines and no `FAILED`/`ERROR`).
 - `node --experimental-strip-types supabase/tests/functions/run_admin_users_test.mjs` runs the `admin-users` rules against a fake backend (Node version requirement NOT VERIFIED).
-- These tests stub `auth` and `storage`, so storage policies are **not** tested locally; check them in the live dashboard.
+- These tests stub `auth` and `storage`: the storage policies are exercised only against that stand-in, **not** against real Supabase Storage, so check them in the live dashboard.
+- `supabase/checks/verify_release.sql` is one read-only query (it reads catalog information only; no staff or job data, nothing is changed) for the SQL editor of any project. After `0001`-`0017` it should report `ok = true` on its 27 `required` rows (counts, row security, function permissions, `SECURITY DEFINER` and fixed `search_path` on the new functions, the job-lock trigger, the key policies and the storage policies). Its 10 `advisory` rows are fingerprints (computed from the repository on PostgreSQL 17) that warn when a function or policy differs from the reviewed one. It is a check of the installed shape, not a proof that the rules work: it was tamper-tested locally (20 deliberate changes, all reported) but never run against real Supabase. `FEATURE-UPDATE-NOTES.md` also has a read-only "pre-apply drift check" for the live project, to run before `0017` replaces two existing functions.
 
 ---
 
@@ -286,7 +287,7 @@ Steps 1 to 7 were run on a scratch **PostgreSQL 16** on 2026-10-08. The live dat
    ```
 
    Without this, the next job gets a number that already exists.
-6. Triggers return to normal when the transaction ends. VERIFIED locally: all 20 enabled afterwards. Then run the checks in section 11.
+6. Triggers return to normal when the transaction ends. VERIFIED locally: all 20 enabled afterwards (21 once `0015`-`0017` are part of the schema; `jobs_frozen` is the new one). Then run the checks in section 11.
 7. Recreate each login, then re-link by email. VERIFIED locally against fake users only (it adds one audit row per employee changed):
 
    ```sql

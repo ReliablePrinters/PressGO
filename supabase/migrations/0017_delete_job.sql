@@ -10,7 +10,7 @@
 -- WHO MAY DELETE (decided in the database, whatever the app shows):
 --   * a manager (the app's administrator role): any job, any status;
 --   * the person who created the job: only while it has not started production (New, Queued or Cancelled).
---   A reason is always required and is written to the audit history.
+--   A reason is always required and is written to the audit history (trimmed; blanks of any kind do not count as a reason).
 alter table pressgo.jobs
   add column if not exists deleted_at   timestamptz,
   add column if not exists deleted_by   uuid references pressgo.employees(id),
@@ -74,7 +74,13 @@ end $$;
 create or replace function pressgo.delete_job(p_job uuid, p_version integer, p_reason text)
 returns void
 language plpgsql security definer set search_path = pressgo as $$
-declare me uuid := current_employee_id(); o jobs; v_reason text := btrim(coalesce(p_reason, ''));
+declare me uuid := current_employee_id(); o jobs;
+  -- the reason with blanks trimmed from both ends: ordinary spaces, tabs, line breaks, and characters that look like nothing
+  -- (160 no-break space, 8203-8205 zero-width space/non-joiner/joiner, 8288 word joiner, 65279 byte-order mark; listed by code
+  -- number so this file holds no invisible characters). A reason made only of such characters is empty, and is refused below.
+  v_reason text := regexp_replace(coalesce(p_reason, ''),
+    '^[[:space:]' || chr(160) || chr(8203) || chr(8204) || chr(8205) || chr(8288) || chr(65279) || ']+|[[:space:]'
+      || chr(160) || chr(8203) || chr(8204) || chr(8205) || chr(8288) || chr(65279) || ']+$', '', 'g');
 begin
   if me is null then raise exception 'not signed in'; end if;
   select * into o from jobs where id = p_job;
