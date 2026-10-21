@@ -13,6 +13,12 @@
 --                   differently). It never proves that everything is fine on its own. Function fingerprints ignore line endings and
 --                   spacing (all runs of white space count as one space), because the live functions were pasted in from an editor whose
 --                   line endings are not known; a hash of the raw text would differ for that reason alone.
+-- Column also_accepted: on three advisory rows (36, 38, 39) a second value is accepted, because the live PressGO project is known to
+--                   differ from the repository in exactly one harmless way: its copies of _notify() and create_job() lack one
+--                   inline "--" comment each (checked 2026-10-20: every other character is identical, and the other 46 functions are
+--                   identical). On the live project those rows are therefore expected to be ok through also_accepted. Any other
+--                   change to those two functions, or to any other function, still makes the rows false. Required rows have no
+--                   second value.
 -- This check cannot prove that the rules WORK (that is what the tests and the manual checklist are for); it proves the rules that
 -- were installed are the ones that were reviewed. Regenerate the advisory values whenever a migration changes.
 with
@@ -95,9 +101,24 @@ checks(n, kind, check_name, expected, actual) as (
     coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = 'set_preferences'), '(missing)')
   union all select 35, 'advisory', 'fingerprint: _emp_from_path()', 'd07c4a0b87a63618562c36b4ad06cf99',
     coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = '_emp_from_path'), '(missing)')
-  union all select 36, 'advisory', 'fingerprint: ALL 54 functions in schema pressgo combined', '21d2fb22088bc64681399d32daff5dbe',
+  union all select 36, 'advisory', 'fingerprint: ALL 54 functions in schema pressgo combined (live project: see the "also_accepted" value)', '21d2fb22088bc64681399d32daff5dbe',
     (select md5(string_agg(x, ',' order by x collate "C")) from (select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')=' || md5(regexp_replace(pg_get_functiondef(p.oid), '[[:space:]]+', ' ', 'g')) as x from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'pressgo') s)
   union all select 37, 'advisory', 'fingerprint: ALL 31 policies in schema pressgo combined (who, what, rule)', '7e09504e57aa250282a77ecfb9dee4e3',
     (select md5(string_agg(x, ',' order by x collate "C")) from (select tablename || '.' || policyname || '=' || md5(coalesce(cmd, '') || '|' || coalesce(array_to_string(roles, ','), '') || '|' || coalesce(qual, '') || '|' || coalesce(with_check, '')) as x from pg_policies where schemaname = 'pressgo') s)
+  union all select 38, 'advisory', 'fingerprint: _notify() (live project: known comment-only difference, see the note at the top)', 'c8e0814b4b884f6fd4bcdf7a18f9a3a7',
+    coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = '_notify'), '(missing)')
+  union all select 39, 'advisory', 'fingerprint: create_job() (live project: known comment-only difference, see the note at the top)', '872e0cc6083eafbcda1e60fae0cdbb80',
+    coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = 'create_job'), '(missing)')
+),
+-- A second value that is also accepted on a few ADVISORY rows only: what the live PressGO project showed when it was read on
+-- 2026-10-20 (the copies of _notify and create_job running there are the repository's text without one inline "--" comment each).
+-- Each value was reproduced locally from the repository text with just that comment removed. Required rows never get a second value.
+known_live(n, alt) as (values
+  (36, 'b1f514131b178b16448f359163fcf1bf'),
+  (38, '1b4b68aa6b0ee81fb5f2140619efee0b'),
+  (39, '4e47cf89f94561cf05e9fb87c211a07f')
 )
-select n, kind, check_name, expected, actual, (expected = actual) as ok from checks order by n;
+select c.n, c.kind, c.check_name, c.expected, k.alt as also_accepted, c.actual,
+       (c.expected = c.actual or coalesce(c.actual = k.alt, false)) as ok
+from checks c left join known_live k on k.n = c.n
+order by c.n;
