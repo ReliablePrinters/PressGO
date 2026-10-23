@@ -58,9 +58,9 @@ select pg_temp.expect_count($$select 1 from employee_preferences where theme = '
 
 -- ===== direct writes are closed
 select pg_temp.as_user('10000000-0000-0000-0000-0000000000a3');
-select pg_temp.expect_fail($$update employee_preferences set theme = 'dark'$$, 'direct update');
-select pg_temp.expect_fail($$insert into employee_preferences (employee_id, theme, accent) values ('00000000-0000-0000-0000-0000000000a4', 'dark', 'blue')$$, 'direct insert (for someone else)');
-select pg_temp.expect_fail($$delete from employee_preferences$$, 'direct delete');
+select pg_temp.expect_error($$update employee_preferences set theme = 'dark'$$, 'permission denied', 'direct update');
+select pg_temp.expect_error($$insert into employee_preferences (employee_id, theme, accent) values ('00000000-0000-0000-0000-0000000000a4', 'dark', 'blue')$$, 'permission denied', 'direct insert (for someone else)');
+select pg_temp.expect_error($$delete from employee_preferences$$, 'permission denied', 'direct delete');
 
 -- ===== bad values are refused (and change nothing)
 select pg_temp.expect_error($$select set_preferences('neon', 'blue')$$, 'unknown appearance', 'unknown theme');
@@ -71,12 +71,37 @@ select pg_temp.expect_error($$select set_preferences('dark', null)$$, 'unknown a
 select pg_temp.expect_error($$select set_preferences('dark; drop table x', 'blue')$$, 'unknown appearance', 'junk theme');
 select pg_temp.expect_count($$select 1 from employee_preferences where theme = 'system' and accent = 'graphite'$$, 1, 'refused saves changed nothing');
 
--- ===== signed-out, disabled and non-staff accounts
+-- ===== signed out (the anonymous role)
+-- These must be refused by the database's PERMISSION system itself ("permission denied"), not merely by the function noticing
+-- nobody is signed in, so a missing REVOKE cannot hide behind "it raised some error". Supabase gives anon USAGE on every schema
+-- it exposes through its API, so give it here too (undone below); otherwise the function would simply not be found. A
+-- signed-out request also carries no user id (earlier tests left one set).
 reset role;
+grant usage on schema pressgo to anon;
+select set_config('request.jwt.claim.sub', '', false);
+select pg_temp.expect_count($$select 1 from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+  where p.oid = 'pressgo.set_preferences(text,text)'::regprocedure and a.grantee = 0 and a.privilege_type = 'EXECUTE'$$, 0, 'PUBLIC holds no execute right on set_preferences');
+select pg_temp.expect_count($$select 1 where has_function_privilege('anon', 'pressgo.set_preferences(text,text)', 'execute')$$, 0, 'anon holds no execute right on set_preferences');
+select pg_temp.expect_count($$select 1 where has_function_privilege('authenticated', 'pressgo.set_preferences(text,text)', 'execute')$$, 1, 'positive control: signed-in users do hold it');
+select pg_temp.expect_count($$select 1 from pg_class c, aclexplode(coalesce(c.relacl, acldefault('r', c.relowner))) a
+  where c.oid = 'pressgo.employee_preferences'::regclass and a.grantee = 0$$, 0, 'PUBLIC holds no right on the preferences table');
+select pg_temp.expect_count($$select 1 where has_table_privilege('anon', 'pressgo.employee_preferences', 'select')
+    or has_table_privilege('anon', 'pressgo.employee_preferences', 'insert')
+    or has_table_privilege('anon', 'pressgo.employee_preferences', 'update')
+    or has_table_privilege('anon', 'pressgo.employee_preferences', 'delete')$$, 0, 'anon holds no right on the preferences table');
+select pg_temp.expect_count($$select 1 where has_table_privilege('authenticated', 'pressgo.employee_preferences', 'select')
+    and not has_table_privilege('authenticated', 'pressgo.employee_preferences', 'insert')
+    and not has_table_privilege('authenticated', 'pressgo.employee_preferences', 'update')
+    and not has_table_privilege('authenticated', 'pressgo.employee_preferences', 'delete')$$, 1, 'positive control: signed-in users can read the table but not write to it');
 set role anon;
-select pg_temp.expect_fail($$select set_preferences('dark', 'blue')$$, 'anonymous save');
-select pg_temp.expect_fail($$select 1 from employee_preferences$$, 'anonymous read');
+select pg_temp.expect_error($$select set_preferences('dark', 'blue')$$, 'permission denied', 'anonymous cannot save a look (a valid one)');
+select pg_temp.expect_error($$select 1 from employee_preferences$$, 'permission denied', 'anonymous cannot read saved looks');
+select pg_temp.expect_error($$insert into employee_preferences (employee_id, theme, accent) values ('00000000-0000-0000-0000-0000000000a4', 'dark', 'blue')$$, 'permission denied', 'anonymous direct insert');
+select pg_temp.expect_error($$update employee_preferences set theme = 'dark'$$, 'permission denied', 'anonymous direct update');
+select pg_temp.expect_error($$delete from employee_preferences$$, 'permission denied', 'anonymous direct delete');
 reset role;
+revoke usage on schema pressgo from anon;
+-- ===== disabled and non-staff accounts
 set role authenticated;
 select pg_temp.as_user('10000000-0000-0000-0000-0000000000a5');
 select pg_temp.expect_error($$select set_preferences('dark', 'blue')$$, 'not signed in', 'disabled person');

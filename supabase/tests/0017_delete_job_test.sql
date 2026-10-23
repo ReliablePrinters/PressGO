@@ -113,13 +113,33 @@ select pg_temp.expect_error($$select delete_job(pg_temp.jid('Acme'), pg_temp.jv(
 select pg_temp.expect_error($$select delete_job('00000000-0000-0000-0000-00000000dead', 1, 'x')$$, 'job not found', 'unknown job');
 -- direct table access is closed even for a manager
 select pg_temp.as_user('10000000-0000-0000-0000-0000000000a1');
-select pg_temp.expect_fail($$delete from jobs where customer_name = 'Acme'$$, 'manager direct delete');
-select pg_temp.expect_fail($$update jobs set deleted_at = now(), deleted_by = '00000000-0000-0000-0000-0000000000a1', delete_reason = 'x' where customer_name = 'Acme'$$, 'manager direct soft-delete');
--- signed out / disabled / not staff
+select pg_temp.expect_error($$delete from jobs where customer_name = 'Acme'$$, 'permission denied', 'manager direct delete');
+select pg_temp.expect_error($$update jobs set deleted_at = now(), deleted_by = '00000000-0000-0000-0000-0000000000a1', delete_reason = 'x' where customer_name = 'Acme'$$, 'permission denied', 'manager direct soft-delete');
+-- signed out (the anonymous role). These must be refused by the database's PERMISSION system itself, not merely by the
+-- function noticing nobody is signed in: the error has to say "permission denied", so a missing REVOKE cannot hide behind
+-- the function's own "not signed in" check. The call uses a REAL job, its REAL version and a good reason, so nothing else
+-- could be the cause of the refusal.
 reset role;
+-- Without USAGE on the schema the anonymous role cannot even see the function (the lookup simply skips the schema and says
+-- "does not exist"), which would hide a missing REVOKE. Supabase gives anon USAGE on every schema it exposes through its API,
+-- so give it here too (undone below): the checks then test the function's own protection.
+grant usage on schema pressgo to anon;
+select set_config('request.jwt.claim.sub', '', false);   -- a signed-out request carries no user id (the earlier tests left the manager's id set)
+select id as acme_id, version as acme_v from jobs where customer_name = 'Acme' \gset
+select pg_temp.expect_count($$select 1 from pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+  where p.oid = 'pressgo.delete_job(uuid,integer,text)'::regprocedure and a.grantee = 0 and a.privilege_type = 'EXECUTE'$$, 0, 'PUBLIC holds no execute right on delete_job');
+select pg_temp.expect_count($$select 1 where has_function_privilege('anon', 'pressgo.delete_job(uuid,integer,text)', 'execute')$$, 0, 'anon holds no execute right on delete_job');
+select pg_temp.expect_count($$select 1 where has_function_privilege('authenticated', 'pressgo.delete_job(uuid,integer,text)', 'execute')$$, 1, 'positive control: signed-in users do hold it');
 set role anon;
-select pg_temp.expect_fail($$select delete_job('00000000-0000-0000-0000-00000000dead', 1, 'x')$$, 'anonymous');
+select pg_temp.expect_error(format($f$select delete_job(%L, %s, %L)$f$, :'acme_id', :'acme_v', 'a perfectly good reason'), 'permission denied', 'anonymous cannot call delete_job on a real job');
+select pg_temp.expect_error($$select delete_job('00000000-0000-0000-0000-00000000dead', 1, 'x')$$, 'permission denied', 'anonymous cannot call delete_job at all');
+select pg_temp.expect_error($$select deleted_at from jobs$$, 'permission denied', 'anonymous cannot read jobs (so cannot see delete marks)');
+select pg_temp.expect_error($$update jobs set deleted_at = now()$$, 'permission denied', 'anonymous cannot soft-delete a job directly');
+select pg_temp.expect_error($$delete from jobs$$, 'permission denied', 'anonymous cannot erase a job directly');
 reset role;
+revoke usage on schema pressgo from anon;
+-- disabled / not staff
+
 set role authenticated;
 select pg_temp.as_user('10000000-0000-0000-0000-0000000000a7');
 select pg_temp.expect_error($$select pg_temp.del('Acme', 'x')$$, 'not signed in', 'disabled login');
@@ -132,7 +152,7 @@ do $$ begin
 end $$;
 -- the database itself refuses to erase a job (even for the owner of the tables) and the delete marks must be complete
 select pg_temp.expect_error($$delete from jobs where customer_name = 'Beta'$$, 'cannot be erased', 'hard delete is blocked at the table');
-select pg_temp.expect_fail($$update jobs set deleted_at = now() where customer_name = 'Beta'$$, 'half-filled delete marks are refused');
+select pg_temp.expect_error($$update jobs set deleted_at = now() where customer_name = 'Beta'$$, 'jobs_deleted_consistent', 'half-filled delete marks are refused');
 
 -- ===== 2. the creator deletes their own job (New)
 set role authenticated;

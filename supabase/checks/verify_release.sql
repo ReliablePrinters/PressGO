@@ -7,7 +7,7 @@
 --                   who may run the new functions, that they run with the owner's checked powers and a fixed search_path,
 --                   that the job-lock trigger is switched on, what the key policies say, and what the storage policies say.
 -- kind = advisory : fingerprints (md5) of the new or replaced functions and of all functions and policies, computed from the
---                   repository migrations on PostgreSQL 17. A mismatch means "something differs from the repository, look at it":
+--                   repository migrations on a local PostgreSQL engine (the live project runs 17.11). A mismatch means "something differs from the repository, look at it":
 --                   it is a strong warning that a rule was edited by hand, but it can also be a harmless difference (for example a
 --                   function changed on purpose after these values were made, or a different PostgreSQL version formatting the text
 --                   differently). It never proves that everything is fine on its own. Function fingerprints ignore line endings and
