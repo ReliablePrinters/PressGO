@@ -10,6 +10,11 @@
 set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PORT="${PGPORT:-54329}"
+# Always read the SQL files as UTF-8. Some files contain non-ASCII characters (for example the middle dot in a chat title).
+# Without this, on Windows psql can pick the console's code page instead (it did when its output was sent to the null
+# device), store those characters wrongly inside functions, and change their fingerprints. The setting overrides anything
+# already in the environment, and the runner checks below that the psql it uses really is in UTF-8.
+export PGCLIENTENCODING=UTF8
 
 # ---- find a PostgreSQL (needs initdb, pg_ctl and psql from the same folder)
 has_tools() { [ -f "$1/initdb" -o -f "$1/initdb.exe" ] && [ -f "$1/pg_ctl" -o -f "$1/pg_ctl.exe" ] && [ -f "$1/psql" -o -f "$1/psql.exe" ]; }
@@ -27,7 +32,7 @@ fi
 
 # initdb refuses to run as root (Linux containers): hand over to the postgres user once
 if [ "$(id -u)" = 0 ] && [ -z "${PRESSGO_AS_POSTGRES:-}" ]; then
-  exec su postgres -c "PRESSGO_AS_POSTGRES=1 PGBIN='$BIN' PGPORT='$PORT' bash '$DIR/run_local.sh'"
+  exec su postgres -c "PRESSGO_AS_POSTGRES=1 PGCLIENTENCODING=UTF8 PGBIN='$BIN' PGPORT='$PORT' bash '$DIR/run_local.sh'"
 fi
 
 PGDATA="$(mktemp -d)"; LOG="$(mktemp -d)"
@@ -39,7 +44,9 @@ trap cleanup EXIT
   || { echo "initdb failed:"; tail -15 "$LOG/initdb.out"; exit 2; }
 "$BIN/pg_ctl" -D "$PGDATA" -o "-p $PORT -c listen_addresses=127.0.0.1" -l "$LOG/server.log" -w start >"$LOG/start.out" 2>&1 \
   || { echo "the test server did not start:"; tail -15 "$LOG/start.out"; tail -15 "$LOG/server.log"; exit 2; }
-echo "PostgreSQL in use: $("${P[@]}" -d postgres -At -c 'show server_version') (a disposable server on this computer, port $PORT; deleted when this finishes)"
+enc="$("${P[@]}" -d postgres -At -c '\encoding' 2>&1)"   # psql's own client encoding (the real process that loads every file below)
+[ "$enc" = "UTF8" ] || { echo "psql is using the client encoding '$enc', not UTF8, so the results would not be reliable. Stopping."; exit 2; }
+echo "PostgreSQL in use: $("${P[@]}" -d postgres -At -c 'show server_version') (a disposable server on this computer, port $PORT; deleted when this finishes); psql client encoding: $enc"
 echo
 
 pass=0; fail=0; failed=()
