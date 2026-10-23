@@ -19,7 +19,9 @@
   --shadow:var(--sh-1);
   --font:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
 }
-@media(prefers-color-scheme:dark){:root{
+/* Dark values. prefs.js puts data-scheme="light" or "dark" on <html> (the person's choice, or the computer's when they pick
+   "Match my computer"). Without it (no script yet) the computer's own setting decides, as before. KEEP THE TWO BLOCKS BELOW IN SYNC. */
+@media(prefers-color-scheme:dark){:root:not([data-scheme]){
   --bg:#0e1017;--card:#171a24;--ink:#ecebf5;--mut:#9b99b3;--line:#272a39;--line-2:#363a4d;
   --brand:#b394ee;--btn:#7a4cd0;--btn-h:#8a60dc;--accent:#f04db2;
   --bad:#ff7b84;--ok:#4cc16f;--warn:#f5a44b;--info:#6aa6ff;
@@ -27,6 +29,25 @@
   --s-new:#94a3b8;--s-queued:#6aa6ff;--s-prod:#b394ee;--s-fin:#f5a44b;--s-ready:#4cc16f;--s-done:#9ca3af;--s-cancel:#ff7b84;
   --sh-1:0 1px 2px rgba(0,0,0,.4);--sh-2:0 8px 24px rgba(0,0,0,.35);--sh-3:0 16px 48px rgba(0,0,0,.6);
 }}
+:root[data-scheme="dark"]{
+  --bg:#0e1017;--card:#171a24;--ink:#ecebf5;--mut:#9b99b3;--line:#272a39;--line-2:#363a4d;
+  --brand:#b394ee;--btn:#7a4cd0;--btn-h:#8a60dc;--accent:#f04db2;
+  --bad:#ff7b84;--ok:#4cc16f;--warn:#f5a44b;--info:#6aa6ff;
+  --side:#0b0c13;--side-ink:#cdd0e4;--side-mut:#7f819c;
+  --s-new:#94a3b8;--s-queued:#6aa6ff;--s-prod:#b394ee;--s-fin:#f5a44b;--s-ready:#4cc16f;--s-done:#9ca3af;--s-cancel:#ff7b84;
+  --sh-1:0 1px 2px rgba(0,0,0,.4);--sh-2:0 8px 24px rgba(0,0,0,.35);--sh-3:0 16px 48px rgba(0,0,0,.6);
+}
+/* Accent colours (purple is the default above). Chosen in "My profile"; each is checked for contrast in desktop/test/prefs-web.test.js. */
+:root[data-accent="blue"]{--brand:#1d4ed8;--btn:#1d4ed8;--btn-h:#1e40af}
+:root[data-accent="blue"][data-scheme="dark"]{--brand:#8fb4ff;--btn:#2f66e0;--btn-h:#2457cc}
+:root[data-accent="teal"]{--brand:#0f766e;--btn:#0f766e;--btn-h:#115e59}
+:root[data-accent="teal"][data-scheme="dark"]{--brand:#5eead4;--btn:#0e7a70;--btn-h:#0b6a61}
+:root[data-accent="green"]{--brand:#15803d;--btn:#15803d;--btn-h:#166534}
+:root[data-accent="green"][data-scheme="dark"]{--brand:#6ee7a0;--btn:#147d40;--btn-h:#106e37}
+:root[data-accent="orange"]{--brand:#b45309;--btn:#b45309;--btn-h:#92400e}
+:root[data-accent="orange"][data-scheme="dark"]{--brand:#fdba74;--btn:#b9500a;--btn-h:#a24509}
+:root[data-accent="graphite"]{--brand:#475569;--btn:#475569;--btn-h:#334155}
+:root[data-accent="graphite"][data-scheme="dark"]{--brand:#b6c2d4;--btn:#5a6b82;--btn-h:#4c5c72}
 
 /* ---------- 2. base ---------- */
 *{box-sizing:border-box;scrollbar-width:thin}
@@ -437,3 +458,22 @@ label.opt b{font-weight:600}
 .upd button:disabled{opacity:.6;cursor:default}
 .ubar{height:8px;border-radius:99px;background:rgba(127,127,127,.3);overflow:hidden;margin:2px 0 10px}.ubar i{display:block;height:100%;background:var(--accent,#e6199b);transition:width .25s}
 .signin .hero .updbox{margin:22px 0 0;max-width:340px}.signin .hero .upd{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.35)}
+
+/* ---------- 14. profile pictures, personal look, pasting a picture ---------- */
+[hidden]{display:none!important}
+.av img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;-webkit-user-drag:none}
+.pfrow{display:flex;gap:16px;align-items:center}
+.pfprev .av{width:72px;height:72px;box-shadow:0 0 0 1px var(--line-2)}
+.pfctl{flex:1;min-width:0}.pfctl label{margin-bottom:8px}.pfctl button{height:30px;font-size:12.5px}
+label.opt .sw{flex:none;width:18px;height:18px;margin-top:1px;border-radius:50%;box-shadow:0 0 0 1px var(--line-2)}
+label.opt:has(input:focus-visible){box-shadow:var(--focus);border-color:var(--brand)}
+.swatches{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+kbd{font:600 12px/1 var(--font);padding:2px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:5px;background:color-mix(in srgb,var(--mut) 8%,var(--card))}
+.pastezone{margin:2px 0 12px;padding:12px 14px;border:2px dashed var(--line-2);border-radius:var(--r);color:var(--mut);font-size:13px;display:flex;flex-direction:column;gap:2px;cursor:text;transition:border-color .12s,background .12s}
+.pastezone b{color:var(--ink);font-size:13.5px}
+.pastezone:hover{border-color:color-mix(in srgb,var(--brand) 45%,var(--line-2))}
+.pastezone:focus-visible{outline:none;border-style:solid;border-color:var(--brand);background:color-mix(in srgb,var(--brand) 7%,var(--card));box-shadow:var(--focus)}
+.pastepreview{display:flex;align-items:center;gap:12px;margin:0 0 12px;padding:10px;border:1px solid var(--line-2);border-radius:var(--r);background:color-mix(in srgb,var(--mut) 5%,var(--card))}
+.pastepreview img{width:72px;height:72px;object-fit:contain;border-radius:6px;background:repeating-conic-gradient(color-mix(in srgb,var(--mut) 14%,var(--card)) 0 25%,var(--card) 0 50%) 0 0/12px 12px;flex:none}
+.pastepreview .pi{flex:1;min-width:0;overflow-wrap:anywhere}.pastepreview .pi b{display:block}
+.djob{margin:0 0 10px;padding:10px 12px;border:1px solid var(--line-2);border-radius:var(--r-sm);background:color-mix(in srgb,var(--bad) 6%,var(--card));overflow-wrap:anywhere}

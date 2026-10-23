@@ -38,7 +38,7 @@ Important context: whether this Supabase project is also used by the Reliable-Pr
 | A Supabase account and a new project (Free plan works; see section 13 for limits) | Database, logins, files, realtime, Edge Function | VERIFIED: live project is on the Free plan, region West US (Oregon), PostgreSQL 17.11 |
 | A GitHub account with this repository | Hosts the app (GitHub Pages) and the source of truth | VERIFIED |
 | A web browser | Supabase dashboard and GitHub web editor are enough; no local tools are needed to rebuild | VERIFIED (this is how the live app was built) |
-| *Optional:* Supabase CLI, `psql`/`pg_dump` (PostgreSQL 16 or newer), Node 22+ | Run the local tests, take SQL exports, deploy the function from a terminal | Tests VERIFIED with PostgreSQL 16. The CLI and Node versions are NOT VERIFIED |
+| *Optional:* Supabase CLI, `psql`/`pg_dump` (PostgreSQL 16 or newer), Node 22+ | Run the local tests, take SQL exports, deploy the function from a terminal | Tests VERIFIED with PostgreSQL 16 (2026-10-08, Linux) and with PostgreSQL 17.11 on Windows (2026-10-21 and 2026-10-23; see the "Automated checks" part of section 11 and `SETUP.md`). Node 24.20 and npm 11.19 ran the web-app tests on that Windows PC; the Supabase CLI is NOT installed and NOT VERIFIED |
 
 ---
 
@@ -62,8 +62,13 @@ Apply these files from `supabase/migrations/` **in this order, each exactly once
 | 12 | `0012_break_status.sql` | "On break" status |
 | 13 | `0013_close_direct_writes.sql` | Removes direct table writes for signed-in and anonymous users; all changes go through the checked functions |
 | 14 | `0014_artwork_approval_roles.sql` | Artwork approval ("Approved for Print") is limited to Front Desk and managers; withdrawing approval stays manager-only |
+| 15 | `0015_avatars.sql` | **NOT YET APPLIED to the live database.** Profile pictures: table `employee_avatars`, `set_avatar()` / `remove_avatar()`, private bucket `avatars` (2 MB; JPEG, PNG, WebP) and its storage policies |
+| 16 | `0016_preferences.sql` | **NOT YET APPLIED to the live database.** Personal look (appearance + accent colour): table `employee_preferences`, `set_preferences()` |
+| 17 | `0017_delete_job.sql` | **NOT YET APPLIED to the live database.** Deleting a job (hidden and locked, never erased): `jobs.deleted_at/deleted_by/delete_reason`, `delete_job()`, changes `can_view_job()` and `check_job_assignee()`, adds trigger `jobs_frozen`. See `FEATURE-UPDATE-NOTES.md` |
 
 **There is no migration-tracking table.** Nothing in the database records which files were applied. Keep a note of the last file you ran.
+
+**Counts after 0015–0017 (checked locally only, in a throwaway Postgres built from the migrations; the live database has not had them applied):** 19 tables, 31 policies, 21 triggers, 54 functions, still no table without row security and no write privileges for `authenticated` / `anon` / `PUBLIC`. The VERIFIED statement below is about 0001–0014 only.
 
 **Proof the files alone rebuild the schema (VERIFIED):** applying 0001–0014 to an empty PostgreSQL 16 database (with `supabase/tests/local_stub.sql` standing in for Supabase's `auth`/`storage`) produces exactly what the live database has: 17 tables, 29 policies, 20 triggers, 48 functions, row-level security on every table, 4 departments, and no write privileges for the `authenticated` / `anon` roles.
 
@@ -124,11 +129,13 @@ Both buckets are created by the migrations, so a rebuild gets them automatically
 |---|---|---|---|---|
 | `job-files` | `0003` | No (private) | 100 MB | Any |
 | `chat-files` | `0009` | No (private) | 10 MB | `image/jpeg`, `image/png`, `image/webp`, `image/gif`, `image/heic` |
+| `avatars` | `0015` (**not yet applied live**) | No (private) | 2 MB | `image/jpeg`, `image/png`, `image/webp` |
 
-Storage policies (all on `storage.objects`, role `authenticated`, VERIFIED; there are no update or delete policies, so uploads are permanent):
+Storage policies (all on `storage.objects`, role `authenticated`, VERIFIED on the live project for `job-files` and `chat-files`: there are no update or delete policies on those two buckets, so their uploads are permanent; migration `0015`, not yet applied live, adds a delete policy for the `avatars` bucket only, see the last bullet below):
 
 - `pressgo job files read` / `pressgo job files add`: allowed when `pressgo.can_view_job(pressgo._job_from_path(name))` (the first folder in the file path is the job id).
 - `pressgo chat files read` / `pressgo chat files add`: allowed when `pressgo.can_read_conversation(pressgo._conv_from_path(name))` (the first folder is the chat id).
+- From `0015` (**not yet applied live; not verified on Supabase, only against the local stub**): `pressgo avatars read` (any active staff member), `pressgo avatars add` and `pressgo avatars tidy` (insert / delete, only when the first folder is your own employee id). There is no update policy, so a picture can never be overwritten; the earlier statement that there are no delete policies stops being true once `0015` is applied.
 
 Other storage settings (VERIFIED): global file size limit **50 MB** (fixed on the Free plan, so the 100 MB `job-files` limit cannot actually be reached), image transformation off.
 
@@ -226,11 +233,17 @@ Also check:
 - Sign in as the first administrator, open **Staff**, create a test person, sign in as them, then disable the test person.
 - A signed-out request must not read data: `https://<PROJECT-REF>.supabase.co/rest/v1/` with only the publishable key and `Accept-Profile: pressgo` must not return any rows.
 
-Automated checks from a terminal (local PostgreSQL 16 or newer, no Supabase needed):
+Automated checks (a local PostgreSQL 16 or newer, no Supabase, **no WSL and no Docker needed**):
 
-- `bash supabase/tests/run_local.sh` runs every permission test against a throwaway database (look for the `PASSED` lines and no `FAILED`/`ERROR`).
+- **VERIFIED on Windows 11 with PostgreSQL 17.11, the live project's version (first on 2026-10-21, again for the final review on 2026-10-23):** double-click `RUN-TESTS.cmd` in the project folder, or run `bash supabase/tests/run_local.sh` in Git Bash. Plain-English instructions, how to read the result and how to recover are in `SETUP.md`. The runner starts a disposable PostgreSQL server in a temporary folder (listening on 127.0.0.1 only), builds a fresh database for each test from `supabase/tests/local_stub.sql` plus all migrations in order, and deletes everything afterwards. It prints `PASS` / `FAIL` per check, a final count, and exits non-zero on any failure. The last full run: **20 of 20 database checks passed** (migration numbering 1 to 17 with no gap; the 15 permission test files; the rollback test; a two-session concurrency test of the `0017` rollback; the `verify_release.sql` check with 27 of 27 required rows and 12 of 12 advisory rows ok), the admin-users test passed, and 99 of 99 web-app tests passed.
+- **The PostgreSQL program for those tests:** EDB's zip of the PostgreSQL 17.11 binaries for Windows (`postgresql-17.11-5-windows-x64-binaries.zip`, 381,531,864 bytes), unpacked to `C:\PressGO-Tools\postgresql-17.11` (about 1 GB) by `SETUP-POSTGRES.cmd` (which runs `supabase/tools/get-postgres.ps1`). No installer, no administrator rights, no PATH or registry change, no service. The SHA-256 of the copy used was `80379b2c04d51c30225532e0ae04509899141e9957ed096fe749d7fd9df8f82f`; EDB publishes no checksum for it and its programs are not digitally signed, so only the size could be checked against the publisher's server. The download branch of the setup script was only dry-run (a repeat download was not made). `RUN-TESTS.cmd` uses Git's own Bash on purpose: the `bash.exe` in `C:\Windows\System32` starts WSL.
+- **Proof the runner reports failures:** copies of the repository with deliberate faults were run and each was reported as a FAIL with exit code 1: the `0015` rollback written in the wrong order (the order an earlier version of these notes gave: Postgres refuses to drop `_emp_from_path()` while policies use it), a missing `revoke` in `0017`, a rollback that forgets to restore `can_view_job()`, one that leaves a table behind, and the `0017` rollback with its table lock removed (the concurrent delete is then lost and the job reappears). The signed-out (anonymous) checks in `0015_avatars_test.sql`, `0016_preferences_test.sql` and `0017_delete_job_test.sql` require the database's own refusal (`permission denied`, or `row-level security` for storage), check that PUBLIC and the anonymous role hold no execute or table rights, and include a signed-in positive control. Each was shown to fail when its protection was removed from a scratch copy (the `revoke` on `delete_job`, on `set_avatar` and on `set_preferences`; a table `grant` to anon on each of the two tables; and a picture-read storage policy opened to anon without the signed-in condition). One earlier attempt, a policy opened to anon that still required a signed-in employee, was correctly NOT reported, because it exposes nothing. The remaining direct-write and storage refusal checks in those three files (previously "any error will do") now also require `permission denied`, `row-level security` or the specific constraint name; a scratch copy that lets signed-in users insert into either new table is reported as a "wrong refusal", which the old checks would have accepted.
+- **Not covered by this:** real Supabase Auth and Storage (stand-ins in `local_stub.sql` are used, so storage policies and sign-in are only proven by the manual checklist in `FEATURE-UPDATE-NOTES.md`), a restore from a backup (see section 12), and anything about the live project's own data. The restore rehearsal in section 12 was NOT re-run on 17.11.
+- On Linux (PostgreSQL 16, as used on 2026-10-08 for 0001-0014) the same script is meant to work with `bash supabase/tests/run_local.sh`; the rewritten version was run only on Windows with 17.11.
+- Earlier results quoted elsewhere in this document that say "PostgreSQL 16" were NOT re-run on 17.11 unless this section says so.
 - `node --experimental-strip-types supabase/tests/functions/run_admin_users_test.mjs` runs the `admin-users` rules against a fake backend (Node version requirement NOT VERIFIED).
-- These tests stub `auth` and `storage`, so storage policies are **not** tested locally; check them in the live dashboard.
+- These tests stub `auth` and `storage`: the storage policies are exercised only against that stand-in, **not** against real Supabase Storage, so check them in the live dashboard.
+- `supabase/checks/verify_release.sql` is one read-only query (it reads catalog information only; no staff or job data, nothing is changed) for the SQL editor of any project. After `0001`-`0017` it should report `ok = true` on its 27 `required` rows (counts, row security, function permissions, `SECURITY DEFINER` and fixed `search_path` on the new functions, the job-lock trigger, the key policies and the storage policies). Its 12 `advisory` rows (39 rows in all) are fingerprints (computed from the repository; first on an in-memory PostgreSQL stand-in, and the same values were then reproduced by the real PostgreSQL 17.11 runner on Windows) that warn when a function or policy differs from the reviewed one; three of them (the all-functions row and the `_notify` and `create_job` rows) also accept a second value, the live project's known comment-only difference recorded in `FEATURE-UPDATE-NOTES.md`. It is a check of the installed shape, not a proof that the rules work: it was tamper-tested locally (24 deliberate changes, all reported, and the live-like case reports nothing) but never run against real Supabase. `FEATURE-UPDATE-NOTES.md` also has a read-only "pre-apply drift check" for the live project, to run before `0017` replaces two existing functions.
 
 ---
 
@@ -279,7 +292,7 @@ Steps 1 to 7 were run on a scratch **PostgreSQL 16** on 2026-10-08. The live dat
    ```
 
    Without this, the next job gets a number that already exists.
-6. Triggers return to normal when the transaction ends. VERIFIED locally: all 20 enabled afterwards. Then run the checks in section 11.
+6. Triggers return to normal when the transaction ends. VERIFIED locally: all 20 enabled afterwards (21 once `0015`-`0017` are part of the schema; `jobs_frozen` is the new one). Then run the checks in section 11.
 7. Recreate each login, then re-link by email. VERIFIED locally against fake users only (it adds one audit row per employee changed):
 
    ```sql
