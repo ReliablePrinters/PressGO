@@ -30,7 +30,7 @@ Look at the last block, headed **SUMMARY**. It has three lines:
 Inside the database part, the lines mean:
 - *migration files numbered in order*: no migration is missing or repeated.
 - *each `0001` ... `0017` test*: the permission rules for that step (who may see, change or delete what).
-- *rollback lines*: the "undo" files for migrations 0015-0017 work, in the right order, and the database ends up exactly as before. One line checks that the undo for 0017 **refuses** to run while a deleted job still exists.
+- *rollback lines*: the "undo" files for migrations 0015-0018 work, in the right order (0018, 0017, 0016, 0015), with data in every table they added, and the database ends up exactly as before. One line checks that the undo for 0017 **refuses** to run while a deleted job still exists.
 - *required checks 27 of 27*: the read-only release check (`supabase/checks/verify_release.sql`) is satisfied. The "advisory" fingerprints are extra warnings, not failures.
 
 ## 3. What this does NOT prove

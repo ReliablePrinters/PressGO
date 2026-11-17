@@ -12,6 +12,7 @@ Live app: https://reliableprinters.github.io/PressGO/ (GitHub Pages, from `docs/
 | 4 | Chat: channels, private messages (one person or a group), job chat | Done, live |
 | 5 | Home, manager dashboard, tasks, alerts | Done, live |
 | 6 | Pilot preparation — see `PILOT.md` | In progress |
+| 2.0 | PressGO 2.0: message links and replies, Settings, new look (light and dark), global search, job activity history, My work, keyboard shortcuts, plus the avatars / personal look / pasted pictures / delete job update (migrations 0015-0018). See `RELEASE-2.0.md` | Built and tested; **not released** (migrations not applied to the live database, not merged) |
 
 ## Where things are
 - `supabase/migrations/` — database setup, applied in order: 0001 foundation, 0002 job core, 0003 files/problems/handoffs, 0004 usernames (+ service-role access), 0005 chat, 0006 group messages, 0007 tasks and alerts, 0008 "only see jobs meant for you", then 0009–0014 (chat pictures, deleting messages, approving pictures, break status, closing direct writes, artwork approval roles; see `REBUILD.md`). **0015 profile pictures, 0016 personal look and 0017 deleting jobs are written and tested but not applied to the live database yet: see `FEATURE-UPDATE-NOTES.md`.**
@@ -20,7 +21,7 @@ Live app: https://reliableprinters.github.io/PressGO/ (GitHub Pages, from `docs/
 - `docs/` — the web app (plain HTML/JS, no build step): `app.js` (sign-in, jobs, staff), `chat.js`, `home.js`, `style.css`, `config.js` (project address + public key).
 
 ## How people sign in
-Username + password. Username `jane` is stored as `jane@pressgo.example.com`; nothing is ever emailed. Managers create logins on the **Staff** screen and can reset passwords or disable people. People change their own password with **Change password**.
+Username + password. Username `jane` is stored as `jane@pressgo.example.com`; nothing is ever emailed. Managers create logins on the **Staff** screen and can reset passwords or disable people. People change their own password under **Settings > Security** (they must type the current one first).
 First manager: create one user in Supabase -> Authentication -> Users (email `name@pressgo.example.com`, Auto Confirm ticked) and make sure a row with that email exists in `pressgo.employees` with `manager_role = true`; the first sign-in links them.
 
 ## Who sees what (enforced in the database)
@@ -35,7 +36,7 @@ First manager: create one user in Supabase -> Authentication -> Users (email `na
 - A job cannot start without artwork Front Desk or a manager approved ("Approved for Print"), unless a manager marked artwork not required.
 - Files: private bucket `job-files`, 100 MB max, program files blocked, never overwritten (each upload is a new version). A copied picture can be pasted (Ctrl+V) into the upload box; it goes through the same Upload button and checks.
 - Deleting a job (migration 0017, not live yet): a manager can delete any job; the person who created it can delete it while it is New, Queued or Cancelled. A reason is required. The job is hidden and locked, not erased, so its history, files and chat are kept (see `FEATURE-UPDATE-NOTES.md` for why).
-- Profile pictures and personal look (appearance + accent colour): each person sets their own under **My profile** (migrations 0015 and 0016, not live yet).
+- Profile pictures and personal look (appearance + accent colour): each person sets their own under **Settings > Profile** and **Settings > Appearance** (migrations 0015 and 0016, not live yet). Version 2.0 adds Settings sections for Notifications, Keyboard and About, global search (Ctrl+K), a job Activity timeline, a My work page and keyboard shortcuts (see `RELEASE-2.0.md`; migration 0018 adds message links, replies to pictures and mark-unread).
 - An open problem blocks the job moving forward until resolved with a note.
 - A handoff sends a job to another department; they must accept it (the accepter becomes owner).
 - Stale screens cannot overwrite someone else's edit.
