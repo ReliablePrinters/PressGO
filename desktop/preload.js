@@ -6,7 +6,10 @@ contextBridge.exposeInMainWorld('pressgoDesktop', Object.freeze({
   notify: Object.freeze({
     show: (p) => ipcRenderer.invoke('notify:show', {
       title: String((p && p.title) || ''), body: String((p && p.body) || ''),
-      conv: p && typeof p.conv === 'string' ? p.conv : null, test: !!(p && p.test)
+      conv: p && typeof p.conv === 'string' ? p.conv : null,
+      msg: p && typeof p.msg === 'string' ? p.msg : null,     // the exact message to open (an older app version just ignores this)
+      job: p && typeof p.job === 'string' ? p.job : null,
+      test: !!(p && p.test)
     }),
     isSupported: () => ipcRenderer.invoke('notify:supported'),
     onOpen: (cb) => {

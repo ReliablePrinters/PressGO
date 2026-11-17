@@ -18,13 +18,20 @@ function createNotifier({ Notification, ipcMain, getWindow, isTrustedSender, now
     return !!(w && !w.isDestroyed() && w.isVisible() && !w.isMinimized() && w.isFocused());
   }
 
-  function bringToFront(conv) {
+  function bringToFront(conv, msg, job) {
     const w = getWindow();
     if (!w || w.isDestroyed()) return;
     if (w.isMinimized()) w.restore();
     w.show();
     w.focus();
-    if (conv) w.webContents.send('notify:open', { conv });
+    if (conv) w.webContents.send('notify:open', msg ? { conv, msg } : { conv });
+    else if (job) w.webContents.send('notify:open', { job });
+  }
+
+  // make the taskbar button flash until the window is looked at, so a message is harder to miss
+  function flash() {
+    const w = getWindow();
+    try { if (w && !w.isDestroyed() && typeof w.flashFrame === 'function') w.flashFrame(true); } catch (e) { /* cosmetic only */ }
   }
 
   function show(payload) {
@@ -32,6 +39,8 @@ function createNotifier({ Notification, ipcMain, getWindow, isTrustedSender, now
     if (!Notification || !Notification.isSupported()) return { ok: false, reason: 'unsupported' };
     const title = clean(payload.title, 80), body = clean(payload.body, 200);
     const conv = typeof payload.conv === 'string' && UUID.test(payload.conv) ? payload.conv : null;
+    const msg = conv && typeof payload.msg === 'string' && UUID.test(payload.msg) ? payload.msg : null;   // a message only makes sense inside its chat
+    const job = typeof payload.job === 'string' && UUID.test(payload.job) ? payload.job : null;
     if (!title) return { ok: false, reason: 'bad-request' };
     if (payload.test !== true && windowIsInUse()) return { ok: false, reason: 'in-use' };   // already looking at PressGO
     const t = now();
@@ -40,10 +49,11 @@ function createNotifier({ Notification, ipcMain, getWindow, isTrustedSender, now
     times.push(t);
     const n = new Notification({ title, body, silent: false });
     alive.add(n);
-    n.on('click', () => { bringToFront(conv); alive.delete(n); });
+    n.on('click', () => { bringToFront(conv, msg, job); alive.delete(n); });
     n.on('close', () => alive.delete(n));
     n.on('failed', () => alive.delete(n));
     n.show();
+    if (payload.test !== true) flash();
     return { ok: true };
   }
 

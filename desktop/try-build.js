@@ -4,6 +4,10 @@
 //   - opens the local copy of the site (http://localhost:8081/) instead of the live site
 //   - looks for updates in a local folder (http://localhost:8099/), never GitHub
 // Usage:  node try-build.js 1.1.0     (then again with 1.1.1)
+//         node try-build.js 1.2.0 --url=http://127.0.0.1:8082/    (point the test app at another LOCAL site)
+// IMPORTANT: the default address (http://localhost:8081/, served by try-serve.js from ../docs) uses docs/config.js, which is the LIVE
+// database. Signing in with such a build talks to LIVE data. To test against an isolated test project, serve a copy of the site
+// whose config.js points at the test project and pass its local address with --url (only http://localhost or 127.0.0.1 is accepted).
 // Nothing here publishes anything or touches GitHub, Supabase or the real PressGO.
 const fs = require('fs');
 const path = require('path');
@@ -30,7 +34,10 @@ const run = (cmd, args) => {
 
 if (process.argv.includes('--config-only')) { console.log(JSON.stringify(cfg, null, 2)); process.exit(0); }
 
-fs.writeFileSync(path.join(__dirname, 'test-override.json'), JSON.stringify({ url: 'http://localhost:8081/' }));
+const urlArg = (process.argv.find((a) => a.startsWith('--url=')) || '').slice(6) || 'http://localhost:8081/';
+if (!/^http:\/\/(localhost|127\.0\.0\.1):\d+\/$/.test(urlArg)) { console.error('--url must look like http://127.0.0.1:8082/ (a local address only)'); process.exit(1); }
+console.log('The test app will open: ' + urlArg);
+fs.writeFileSync(path.join(__dirname, 'test-override.json'), JSON.stringify({ url: urlArg }));
 fs.writeFileSync(path.join(__dirname, '.test-config.json'), JSON.stringify(cfg, null, 2));
 try {
   run('node', ['make-icon.js']);

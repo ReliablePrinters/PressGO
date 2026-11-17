@@ -34,6 +34,7 @@
       "updater.js",
       "notify.js",
       "preload.js",
+      "startup/**/*",
       "package.json"
     ],
     "npmRebuild": false,
