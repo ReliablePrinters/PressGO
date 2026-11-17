@@ -72,31 +72,34 @@ test('recall/remember: round trip, and corrupt or unavailable storage never thro
 });
 
 // ---- accessibility: every accent stays readable in both schemes
-const SURFACES = { light: { bg: '#f5f4f8', card: '#ffffff' }, dark: { bg: '#0e1017', card: '#171a24' } };
+// The page, a card and a raised surface (table headers, hovered rows) of the Print Room light theme and the Clean Slate dark theme.
+const SURFACES = { light: { bg: '#f4f6f8', card: '#ffffff', raised: '#f8fafb' }, dark: { bg: '#000000', card: '#1c1c1e', raised: '#2c2c2e' } };
 for (const [name, a] of Object.entries(prefs.ACCENTS)) {
   for (const scheme of ['light', 'dark']) {
     const c = a[scheme], s = SURFACES[scheme];
     test(`contrast: ${name} / ${scheme}`, () => {
       assert.ok(ratio(c.brand, s.bg) >= 4.5, `links and highlights on the page background: ${ratio(c.brand, s.bg).toFixed(2)}`);
       assert.ok(ratio(c.brand, s.card) >= 4.5, `links and highlights on cards: ${ratio(c.brand, s.card).toFixed(2)}`);
+      assert.ok(ratio(c.brand, s.raised) >= 4.5, `links and highlights on raised surfaces: ${ratio(c.brand, s.raised).toFixed(2)}`);
       assert.ok(ratio(c.btn, '#ffffff') >= 4.5, `white text on a button: ${ratio(c.btn, '#ffffff').toFixed(2)}`);
       assert.ok(ratio(c.btn, s.card) >= 3, `a button stands out from its card: ${ratio(c.btn, s.card).toFixed(2)}`);
-      // The default purple's dark-mode hover colour was already in the app before this feature (4.39:1); it is not changed here.
-      const preExisting = name === 'purple' && scheme === 'dark';
-      assert.ok(ratio(c.btnH, '#ffffff') >= (preExisting ? 4.3 : 4.5), `white text on a hovered button: ${ratio(c.btnH, '#ffffff').toFixed(2)}`);
+      assert.ok(ratio(c.btnH, '#ffffff') >= 4.5, `white text on a hovered button: ${ratio(c.btnH, '#ffffff').toFixed(2)}`);
     });
   }
 }
 
-test('the default purple is exactly the colours the app already had', () => {
-  assert.deepEqual(prefs.ACCENTS.purple.light, { brand: '#5b2a9d', btn: '#5b2a9d', btnH: '#4d2287' });
-  assert.deepEqual(prefs.ACCENTS.purple.dark, { brand: '#b394ee', btn: '#7a4cd0', btnH: '#8a60dc' });
+test('the default accent is Press Blue (stored under the name the database already lists)', () => {
+  assert.equal(prefs.DEFAULTS.accent, 'purple');
+  assert.equal(prefs.ACCENTS.purple.label, 'Press Blue');
+  assert.deepEqual(prefs.ACCENTS.purple.light, { brand: '#0a6a9e', btn: '#0a6a9e', btnH: '#085784' });
+  assert.deepEqual(prefs.ACCENTS.purple.dark, { brand: '#5cc0f2', btn: '#0a6fa8', btnH: '#095f90' });
+  assert.equal(Object.keys(prefs.ACCENTS).length, 6, 'six accents, as the database allows');
 });
 
 // ---- the three places that list the accents must agree
 test('style.css has exactly the colours listed in prefs.js', () => {
   for (const [name, a] of Object.entries(prefs.ACCENTS)) {
-    if (name === 'purple') continue;   // the default lives in :root
+    if (name === 'purple') continue;   // the default lives in :root (checked in design-web.test.js)
     const rule = (scheme) => {
       const sel = scheme === 'dark' ? `:root[data-accent="${name}"][data-scheme="dark"]` : `:root[data-accent="${name}"]`;
       const i = css.indexOf(sel + '{');

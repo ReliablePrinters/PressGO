@@ -140,30 +140,98 @@
     draw();
   };
 
-  // ---------------------------------------------------------------- Alerts
-  window.viewAlerts = async function () {
-    shell('alerts', window.pgUI.LOADING);
-    const { data, error } = await sb.from('notifications').select('id,kind,title,job_id,created_at,read_at').order('created_at', { ascending: false }).limit(100);
+  // ---------------------------------------------------------------- Alerts (notification centre)
+  const AL = () => window.pgChat;            // message-link, grouping and unread rules (chatlogic.js, tested)
+  const KIND = { assigned: ['user', 'Assigned'], handoff: ['swap', 'Handoff'], problem: ['alert', 'Problem'], task: ['tasks', 'Task'], approved: ['check', 'Approved'],
+    approval_withdrawn: ['alert', 'Approval taken back'], reply: ['chat', 'Reply'], job_deleted: ['alert', 'Job deleted'] };
+  const alertCss = document.createElement('style');
+  alertCss.textContent = `
+.atabs{display:flex;gap:6px;margin:0 0 12px;flex-wrap:wrap}.atabs button{height:34px;border-radius:99px;padding:0 14px}
+.atabs button[aria-pressed="true"]{background:var(--btn);border-color:var(--btn);color:#fff}
+.arow.w{padding:0}.arow.w .alink{display:flex;align-items:center;gap:14px;flex:1;min-width:0;padding:13px 16px;color:inherit}
+.arow.w .alink:hover{background:color-mix(in srgb,var(--brand) 6%,var(--card));text-decoration:none}
+.arow.w .mk{margin-right:12px;flex:none;height:30px;padding:0 10px}
+.agroup>summary{list-style:none;cursor:pointer}.agroup>summary::-webkit-details-marker{display:none}
+.agroup .gc{margin-left:8px;font-size:12px;color:var(--mut);white-space:nowrap}
+.agroup .kids .arow{padding-left:34px}
+.am .sub{display:block}`;
+  document.head.appendChild(alertCss);
+
+  let alertTab = null;
+  const openGroups = new Set();      // which groups were left open, so a redraw (after marking one read) does not close them
+  async function loadAlerts() {
+    let r = await sb.from('notifications').select('id,kind,title,job_id,conversation_id,message_id,created_at,read_at').order('created_at', { ascending: false }).limit(150);
+    // before the database update that adds the message link, the older columns still work (alerts then open the job as before)
+    if (r.error) r = await sb.from('notifications').select('id,kind,title,job_id,created_at,read_at').order('created_at', { ascending: false }).limit(150);
+    return r;
+  }
+  window.viewAlerts = async function (keepTab) {
+    const L = AL();
+    if (!keepTab) shell('alerts', window.pgUI.LOADING);
+    const { data, error } = await loadAlerts();
     if (error) return shell('alerts', `<div class="err-box">${esc(friendly(error))}</div>`);
     const list = data || [];
-    const KIND = { assigned: ['user', 'Assigned'], handoff: ['swap', 'Handoff'], problem: ['alert', 'Problem'], task: ['tasks', 'Task'], approved: ['check', 'Approved'] };
-    const unreadN = list.filter((n) => !n.read_at).length;
-    const item = (n) => { const k = KIND[n.kind] || ['bell', 'Alert']; const inner = `<span class="ai ${esc(n.kind)}">${ic(k[0])}</span><span class="am"><b>${esc(n.title)}</b><span class="sub">${esc(k[1])}</span></span><span class="at" title="${esc(fmt(n.created_at))}">${esc(window.pgUI.rel(n.created_at))}</span>`;
-      return n.job_id ? `<a class="arow ${n.read_at ? '' : 'unread'}" href="#/job/${n.job_id}" data-n="${n.id}">${inner}</a>` : `<div class="arow ${n.read_at ? '' : 'unread'}">${inner}</div>`; };
-    shell('alerts', `<div class="pagehead"><div><h2>Alerts</h2><div class="sub">${unreadN ? `${unreadN} new` : 'You are all caught up'}</div></div><button id="mr">Mark all as read</button></div>
-      <div class="card flush">${list.length ? list.map(item).join('') : emptyState('bell', 'No alerts yet', 'You will see new assignments, handoffs, problems and tasks here.')}</div>`);
-    document.getElementById('mr').onclick = async () => { await call('mark_alerts_read', {}); window.viewAlerts(); };
-    document.querySelectorAll('a[data-n]').forEach((a) => { a.onclick = () => { call('mark_alerts_read', { p_ids: [a.dataset.n] }); }; });
-    await call('mark_alerts_read', {}).catch(() => {});
-    window.alertBadge();
+    const unreadN = L.unreadOf(list).length;
+    if (!keepTab || !alertTab) alertTab = unreadN ? 'unread' : 'all';
+    const shown = L.view(list, alertTab);
+    const row = (n, kid) => {
+      const k = KIND[n.kind] || ['bell', 'Alert'];
+      const href = L.alertHref(n);
+      const where = n.message_id ? ' · opens the message' : '';
+      const inner = `<span class="ai ${esc(n.kind)}">${ic(k[0])}</span><span class="am"><b>${esc(n.title)}</b><span class="sub">${esc(k[1])}${where}</span></span><span class="at" title="${esc(fmt(n.created_at))}">${esc(window.pgUI.rel(n.created_at))}</span>`;
+      const main = href ? `<a class="alink" href="${href}" data-n="${n.id}">${inner}</a>` : `<div class="alink">${inner}</div>`;
+      return `<div class="arow w ${n.read_at ? '' : 'unread'}">${main}${n.read_at ? '' : `<button type="button" class="mk sm" data-read="${n.id}" title="Mark this alert as read">Mark read</button>`}</div>`;
+    };
+    const groups = L.groupAlerts(shown);
+    const html = groups.map((g) => {
+      if (g.items.length < 2) return row(g.items[0]);
+      const k = KIND[g.kind] || ['bell', 'Alert'];
+      return `<details class="agroup" data-key="${esc(g.key)}"${openGroups.has(g.key) ? ' open' : ''}><summary class="arow ${g.unread ? 'unread' : ''}"><span class="ai ${esc(g.kind)}">${ic(k[0])}</span><span class="am"><b>${esc(g.latest.title)}</b><span class="sub">${esc(k[1])}<span class="gc">${g.items.length} alerts${g.unread ? `, ${g.unread} new` : ''} · show all</span></span></span><span class="at" title="${esc(fmt(g.latest.created_at))}">${esc(window.pgUI.rel(g.latest.created_at))}</span></summary><div class="kids">${g.items.map(row).join('')}</div></details>`;
+    }).join('');
+    const empty = alertTab === 'unread'
+      ? emptyState('bell', 'You are all caught up', 'New assignments, approvals, replies and handoffs will appear here.')
+      : emptyState('bell', 'No alerts yet', 'You will see new assignments, approvals, replies, handoffs, problems and tasks here.');
+    shell('alerts', `<div class="pagehead"><div><h2>Alerts</h2><div class="sub">${unreadN ? `${unreadN} new` : 'You are all caught up'}</div></div><div class="actions"><button id="nset">Notification settings</button><button id="mr" ${unreadN ? '' : 'disabled'}>Mark all as read</button></div></div>
+      <div class="atabs" role="group" aria-label="Show"><button type="button" data-tab="unread" aria-pressed="${alertTab === 'unread'}">Unread${unreadN ? ` (${unreadN})` : ''}</button><button type="button" data-tab="all" aria-pressed="${alertTab === 'all'}">All</button></div>
+      <div class="card flush">${html || empty}</div>`);
+    if (window.pgFx) window.pgFx.unreadAlerts(unreadN);
+    document.querySelectorAll('.atabs button').forEach((b) => { b.onclick = () => { alertTab = b.dataset.tab; window.viewAlerts(true); }; });
+    document.querySelectorAll('details.agroup').forEach((d) => d.addEventListener('toggle', () => { if (d.open) openGroups.add(d.dataset.key); else openGroups.delete(d.dataset.key); }));
+    document.getElementById('mr').onclick = async () => { await call('mark_alerts_read', {}); window.viewAlerts(true); window.alertBadge(); };
+    const ns = document.getElementById('nset'); if (ns) ns.onclick = () => window.pgNotify && window.pgNotify.settings(me);
+    document.querySelectorAll('button[data-read]').forEach((b) => { b.onclick = async () => { await call('mark_alerts_read', { p_ids: [b.dataset.read] }); window.viewAlerts(true); window.alertBadge(); }; });
+    // opening an alert marks just that alert read
+    document.querySelectorAll('a[data-n]').forEach((a) => { a.onclick = () => { call('mark_alerts_read', { p_ids: [a.dataset.n] }).then(() => window.alertBadge()).catch(() => {}); }; });
   };
 
-  let alertTimer = null;
+  // live: a new alert reaches the screen at once (database change feed, limited to this person's own alerts)
+  let alertTimer = null, alertCh = null;
+  function onAlert(n) {
+    const L = AL();
+    window.alertBadge();
+    if (location.hash === '#/alerts') { window.viewAlerts(true); return; }
+    if (window.pgFx && window.pgFx.alertOff(n.kind)) return;                           // this type is switched off in Settings: the alert is still listed, just quiet
+    if (window.pgFx && window.pgFx.mode() !== 'off') window.pgFx.ping();
+    if (window.pgNotify) window.pgNotify.alert(n, me);                                  // Windows notification when away
+    const viewing = n.conversation_id && (location.hash || '').indexOf('#/chat/' + n.conversation_id) === 0 && document.visibilityState === 'visible' && document.hasFocus();
+    // opening the alert from the banner counts as reading it
+    if (window.pgFx && window.pgFx.bannersOn() && !viewing) window.pgFx.banner({ title: n.title, body: '', href: L.alertHref(n), onOpen: () => { call('mark_alerts_read', { p_ids: [n.id] }).then(() => window.alertBadge()).catch(() => {}); } });
+  }
+  function alertLive() {
+    if (alertCh || !me) return;
+    alertCh = sb.channel('alerts-me').on('postgres_changes', { event: 'INSERT', schema: 'pressgo', table: 'notifications', filter: 'employee_id=eq.' + me.id }, (p) => { try { onAlert(p.new); } catch (e) { /* an alert must never break the page */ } }).subscribe();
+  }
+  window.alertLeave = function () {
+    if (alertCh) { sb.removeChannel(alertCh); alertCh = null; }
+    if (alertTimer) { clearInterval(alertTimer); alertTimer = null; }
+  };
   window.alertBadge = async function () {
     const el = document.getElementById('alertlink');
     if (!el || !me) return;
     const { count } = await sb.from('notifications').select('id', { count: 'exact', head: true }).is('read_at', null);
     const tx = el.querySelector('.tx') || el; tx.textContent = count ? `Alerts (${count})` : 'Alerts';
-    if (!alertTimer) alertTimer = setInterval(() => { if (me) window.alertBadge(); }, 30000);
+    if (window.pgFx) window.pgFx.unreadAlerts(count || 0);
+    alertLive();
+    if (!alertTimer) alertTimer = setInterval(() => { if (me) window.alertBadge(); }, 30000);   // safety net if live updates are off
   };
 })();

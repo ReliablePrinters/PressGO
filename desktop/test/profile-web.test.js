@@ -60,11 +60,11 @@ test('the app and migration 0015 agree on limits and types', () => {
   assert.equal(profile.AVATAR.BUCKET, 'avatars');
 });
 
-test('app.js shows the profile button, and chat.js draws pictures over the default initials avatar', () => {
+test('app.js shows the Settings button, and chat.js draws pictures over the default initials avatar', () => {
   const app = fs.readFileSync(path.join(ROOT, 'docs', 'app.js'), 'utf8');
   const chat = fs.readFileSync(path.join(ROOT, 'docs', 'chat.js'), 'utf8');
   const html = fs.readFileSync(path.join(ROOT, 'docs', 'index.html'), 'utf8');
-  assert.ok(app.includes('id="prof">My profile</button>'));
+  assert.ok(app.includes('id="set"') && !app.includes('id="prof"'), 'one Settings button replaces the old profile button');
   assert.ok(app.includes('window.pgProfile.init()'), 'saved look and pictures are loaded after sign-in');
   assert.ok(chat.includes('window.pgAvatarUrl'), 'the avatar helper asks for a picture');
   assert.ok(/\$\{esc\(initials\(n\)\)\}\$\{pic \?/.test(chat), 'initials stay underneath as the default');
@@ -74,6 +74,6 @@ test('app.js shows the profile button, and chat.js draws pictures over the defau
 test('profile.js never sends anyone else\'s id: it only calls the three "mine" functions', () => {
   const src = fs.readFileSync(path.join(ROOT, 'docs', 'profile.js'), 'utf8');
   const calls = [...src.matchAll(/call\('([a-z_]+)'/g)].map((m) => m[1]).sort();
-  assert.deepEqual(calls, ['remove_avatar', 'set_avatar', 'set_preferences']);
+  assert.deepEqual(calls, ['remove_avatar', 'set_avatar']);
   assert.ok(!/p_employee|employee_id\s*:/.test(src.replace(/select\('[^']*'\)/g, '')), 'no employee id is ever passed in');
 });

@@ -138,3 +138,36 @@ test('no desktop bridge (normal browser): does nothing and cannot crash', () => 
   const core = createCore({ bridge: null, getPrefs: () => ({ mode: 'all', preview: true }), getName: async () => '', isAway: () => true });
   assert.doesNotThrow(() => core.message({ id: 'x', conversation_id: 'c', author_id: 'a' }, {}, 'me'));
 });
+
+test('a notification carries the message id so clicking it opens that very message', async () => {
+  const MSGID = '22222222-2222-4222-8222-222222222222';
+  const r = rig();
+  r.core.message(r.msg(BOB, DM, 'Can you check the proof?', { id: MSGID }), DM, ME);
+  await r.flush();
+  assert.deepEqual(r.shown, [{ title: 'Bob Marley', body: 'Can you check the proof?', conv: 'c-dm', msg: MSGID }]);
+  // a burst in one chat points at the latest message
+  const LATEST = '33333333-3333-4333-8333-333333333333';
+  const b = rig();
+  b.core.message(b.msg(BOB, DM, 'one', { id: MSGID }), DM, ME);
+  b.core.message(b.msg(BOB, DM, 'two', { id: LATEST }), DM, ME);
+  await b.flush();
+  assert.equal(b.shown.length, 1);
+  assert.equal(b.shown[0].msg, LATEST);
+});
+
+// ---------- defaults: everything is on until a person chooses otherwise ----------
+test('defaults: Windows notifications and sound start on "all chats"; banners and every alert type start on', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const { DEFAULTS } = require('../../docs/notify.js');
+  assert.strictEqual(DEFAULTS.mode, 'all');
+  assert.strictEqual(DEFAULTS.preview, true);
+  const fx = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'msgfx.js'), 'utf8');
+  assert.ok(/const DEFAULT_MODE = 'all'/.test(fx), 'the sound default is all chats');
+  assert.ok(!/mode: 'dm'/.test(fx), 'no leftover private-only fallback in msgfx.js');
+  assert.ok(/banners: p\.banners !== false/.test(fx), 'banners are on unless switched off');
+  assert.ok(/off: Array\.isArray\(p\.off\)/.test(fx) && /: \[\] \}/.test(fx), 'no alert type is switched off by default');
+  // a saved choice is never overridden by the default
+  assert.ok(/MODES\.includes\(p\.mode\) \? p\.mode : DEFAULT_MODE/.test(fx), 'a saved sound choice wins');
+  const nf = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'notify.js'), 'utf8');
+  assert.ok(/\.\.\.DEFAULTS, \.\.\.\(JSON\.parse/.test(nf), 'saved Windows choices are layered over the defaults');
+});

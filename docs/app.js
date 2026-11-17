@@ -130,6 +130,7 @@ async function loadMe(session) {
   }
   if (!emp || !emp.active) return showBlocked(session, 'Your access has been disabled.');
   me = emp;
+  if (window.pgFx) window.pgFx.setUser(me.id);   // sound setting is kept per person on this computer
   const { data: d } = await sb.from('departments').select('id,name').eq('active', true).order('name');
   depts = d || [];
   const { data: mem } = await sb.from('department_memberships').select('department_id').eq('employee_id', emp.id).is('ended_at', null);
@@ -165,40 +166,40 @@ function showBlocked(session, why) {
 
 // ---------------------------------------------------------------- shell + routing
 function shell(active, inner) {
-  const nav = (href, key, label, icon, cta) => `<a class="nav ${cta ? 'cta' : ''} ${active === key ? 'on' : ''}" href="${href}" ${active === key ? 'aria-current="page"' : ''}><span class="lb">${ic(icon)}<span>${label}</span></span></a>`;
+  const nav = (href, key, label, icon, cta) => `<a class="nav ${cta ? 'cta' : ''} ${active === key ? 'on' : ''}" href="${href}" ${active === key ? 'aria-current="page"' : ''}><span class="lb">${ic(icon)}<span>${label}</span></span>${window.pgShortcuts ? window.pgShortcuts.hintHtml(key) : ''}</a>`;
   const roles = [me.manager_role ? 'Manager' : '', me.front_desk ? 'Front Desk' : ''].filter(Boolean).join(' · ');
-  $app.innerHTML = `<div class="app" id="appbox"><div class="mobbar"><button id="burger" aria-label="Menu">☰</button><img src="logo.png" alt=""><b>PressGO</b></div>
-    <aside class="side"><div class="brand"><img src="logo.png" alt=""><b>Press<span>GO</span></b></div><div id="updbox" class="updbox"></div><div class="scroll">
+  $app.innerHTML = `<div class="app" id="appbox"><div class="mobbar"><button id="burger" aria-label="Menu">☰</button><img src="logo.png" alt=""><b>PressGO</b><button id="gsm" class="gsm" type="button" aria-label="Search">${ic('search')}</button></div>
+    <aside class="side"><div class="brand"><img src="logo.png" alt=""><b>Press<span>GO</span></b></div><div class="side-search"><button id="gsb" class="gsbtn" type="button" aria-label="Search (${window.pgSearch ? window.pgSearch.keyHint : 'Ctrl K'})">${ic('search')}<span class="gsl">Search</span><kbd>${window.pgSearch ? window.pgSearch.keyHint : 'Ctrl K'}</kbd></button></div><div id="updbox" class="updbox"></div><div class="scroll">
       <h4>Work</h4>
-      ${nav('#/home', 'home', 'Home', 'home')}${nav('#/jobs', 'jobs', 'Jobs', 'jobs')}${canCreate() ? nav('#/new', 'new', 'New job', 'plus', true) : ''}${nav('#/tasks', 'tasks', 'Tasks', 'tasks')}<a class="nav ${active === 'alerts' ? 'on' : ''}" href="#/alerts" id="alertlink" ${active === 'alerts' ? 'aria-current="page"' : ''}><span class="lb">${ic('bell')}<span class="tx">Alerts</span></span></a>
+      ${nav('#/home', 'home', 'Home', 'home')}${nav('#/my-work', 'mywork', 'My work', 'inbox')}${nav('#/jobs', 'jobs', 'Jobs', 'jobs')}${canCreate() ? nav('#/new', 'new', 'New job', 'plus', true) : ''}${nav('#/tasks', 'tasks', 'Tasks', 'tasks')}<a class="nav ${active === 'alerts' ? 'on' : ''}" href="#/alerts" id="alertlink" ${active === 'alerts' ? 'aria-current="page"' : ''}><span class="lb">${ic('bell')}<span class="tx">Alerts</span></span>${window.pgShortcuts ? window.pgShortcuts.hintHtml('alerts') : ''}</a>
       ${me.manager_role ? `<h4>Admin</h4>${nav('#/staff', 'staff', 'Staff', 'users')}` : ''}
       <div id="sidechats"></div></div>
     <div class="foot"><div class="me2">${window.pgAvatar(me.display_name, 36)}<div><b>${esc(me.display_name)}</b><div class="note">${esc(roles)}</div></div></div>
-      <div class="actions"><button id="prof">My profile</button><button id="cpw">Change password</button><button id="so">Sign out</button>${window.pgNotify ? '<button id="nfy" style="flex-basis:100%">Notifications</button>' : ''}</div></div></aside>
+      <div class="actions"><button id="set" ${active === 'settings' ? 'aria-current="page"' : ''}>Settings</button><button id="so">Sign out</button></div></div></aside>
     <div class="content"><main>${inner}</main></div></div>`;
   const box = document.getElementById('appbox');
   document.getElementById('burger').onclick = () => box.classList.toggle('nav-open');
   box.querySelector('.side').onclick = (e) => { if (e.target.closest('a')) box.classList.remove('nav-open'); };
+  // on a phone the menu is a drawer: tapping the page behind it, or pressing Escape, closes it
+  box.querySelector('.content').addEventListener('click', () => box.classList.remove('nav-open'));
+  box.addEventListener('keydown', (e) => { if (e.key === 'Escape') box.classList.remove('nav-open'); });
   if (window.chatSidebar) window.chatSidebar();
   if (window.alertBadge) window.alertBadge();
-  document.getElementById('cpw').onclick = async () => {
-    const r = await ask('Change my password', '<label>New password (at least 8 characters)<input name="p1" type="password" required minlength="8" autocomplete="new-password"></label><label>Type it again<input name="p2" type="password" required minlength="8" autocomplete="new-password"></label>', 'Save password');
-    if (!r) return;
-    if (r.p1 !== r.p2) return toast('The two passwords did not match. Nothing was changed.', 'error');
-    const { error } = await sb.auth.updateUser({ password: r.p1 });
-    error ? toast(error.message, 'error') : toast('Your password has been changed.');
-  };
-  document.getElementById('so').onclick = async () => { await sb.auth.signOut(); me = null; if (window.pgProfile) window.pgProfile.reset(); showLogin(); };
-  document.getElementById('prof').onclick = () => window.pgProfile && window.pgProfile.open();
-  const nfy = document.getElementById('nfy'); if (nfy) nfy.onclick = () => window.pgNotify.settings(me);
+  document.getElementById('set').onclick = () => { location.hash = '#/settings'; };
+  for (const id of ['gsb', 'gsm']) document.getElementById(id).onclick = () => { box.classList.remove('nav-open'); if (window.pgSearch) window.pgSearch.open(); };
+  document.getElementById('so').onclick = async () => { await sb.auth.signOut(); me = null; if (window.alertLeave) window.alertLeave(); if (window.pgProfile) window.pgProfile.reset(); showLogin(); };
 }
 function route() {
   const h = location.hash || '#/home';
+  if (h.startsWith('#/chat') && window.chatSameConv && window.chatSameConv(h)) return;   // a link to a message in the open chat: just scroll to it
   if (window.chatLeave) window.chatLeave();
   if (h.startsWith('#/chat')) return window.viewChat(h);
   if (h === '#/home') return window.viewHome();
+  if (h === '#/my-work') return window.viewMyWork();
   if (h === '#/tasks') return window.viewTasks();
   if (h === '#/alerts') return window.viewAlerts();
+  const sec = window.pgSettings && window.pgSettings.parseSettingsHash(h);
+  if (sec) return window.viewSettings(sec);
   if (h === '#/new') return canCreate() ? viewNew() : (location.hash = '#/jobs');
   if (h === '#/staff') return me.manager_role ? viewStaff() : (location.hash = '#/jobs');
   const m = h.match(/^#\/job\/([0-9a-f-]{36})$/);
@@ -302,9 +303,9 @@ async function viewStaff() {
   const deptBoxes = (sel) => `<div class="optgrid">${depts.map((d) => `<label class="opt"><input type="checkbox" name="dept" value="${d.id}" ${sel.includes(d.id) ? 'checked' : ''}><span><b>${esc(d.name)}</b></span></label>`).join('')}</div>`;
   const roleBoxes = (m, f) => `<div class="optgrid"><label class="opt"><input type="checkbox" name="mgr" ${m ? 'checked' : ''}><span><b>Manager</b><small>Full access, including Staff and approvals</small></span></label>
     <label class="opt"><input type="checkbox" name="fd" ${f ? 'checked' : ''}><span><b>Front Desk</b><small>Creates, edits and assigns jobs</small></span></label></div>`;
-  shell('staff', `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Staff</h2><button class="primary" id="addst">+ Add staff</button></div>
+  shell('staff', `<div class="pagehead"><div><h2>Staff</h2></div><button class="primary" id="addst">+ Add staff</button></div>
     
-    <div class="card">${(emps || []).map((e) => `<div class="job staffrow" style="${e.active ? '' : 'opacity:.6'}">
+    <div class="card">${(emps || []).map((e) => `<div class="job staffrow${e.active ? '' : ' off'}">
       <div class="who">${window.pgAvatar(e.display_name, 38)}<div><b>${esc(e.display_name)}</b> <span class="sub">username: ${esc(e.username)}</span>
         <div>${e.manager_role ? '<span class="badge role">Manager</span>' : ''}${e.front_desk ? '<span class="badge role">Front Desk</span>' : ''}${e.active ? '' : '<span class="badge late">Disabled</span>'}${!e.auth_user_id ? '<span class="badge">No login yet</span>' : ''}</div>
         <div class="sub">${deptOf(e.id).map(nameOf).join(', ') || 'No department'}</div></div></div>
@@ -347,13 +348,17 @@ async function viewJob(id) {
   shell('jobs', LOADING);
   const [{ data: j, error }, { data: hist }, { data: files }, { data: holds }, { data: hand }] = await Promise.all([
     sb.from('jobs').select('*,departments:current_department_id(name),assignee:current_assignee_id(display_name)').eq('id', id).maybeSingle(),
-    sb.from('audit_events').select('id,action,reason,created_at,before,after,actor:actor_id(display_name)').eq('job_id', id).order('created_at', { ascending: false }).order('id', { ascending: false }),
+    sb.from('audit_events').select('id,action,reason,created_at,before,after,actor:actor_id(display_name)').eq('job_id', id).order('created_at', { ascending: false }).order('id', { ascending: false }).limit(500),
     sb.from('job_files').select('id,category,file_name,mime_type,size_bytes,version_no,storage_path,uploaded_at,uploader:uploaded_by(display_name)').eq('job_id', id).order('uploaded_at', { ascending: false }),
     sb.from('job_holds').select('id,kind,note,raised_at,resolved_at,resolution_note,raiser:raised_by(display_name),resolver:resolved_by(display_name)').eq('job_id', id).order('raised_at', { ascending: false }),
     sb.from('job_handoffs').select('id,note,status,created_at,from_department_id,to_department_id,sender:from_employee_id(display_name)').eq('job_id', id).order('created_at', { ascending: false })
   ]);
   if (error || !j) return shell('jobs', '<div class="card"><h2>You don\'t have access</h2><p class="note">This job doesn\'t exist or isn\'t available to you.</p><a href="#/jobs">Back to jobs</a></div>');
 
+  // Activity: built from the audit records the database already keeps (see activitylogic.js / activity.js)
+  const actCtx = await window.pgActivity.context(hist || [], j);
+  const actCard = window.pgActivity.card(hist || [], j, actCtx);
+  const lastAct = window.pgActivity.latestLine();
   const mgr = me.manager_role, fd = me.front_desk, owner = j.current_assignee_id === me.id;
   // Delete job: a manager, or the person who created it while it has not started production. The database enforces the same rule in delete_job().
   const canDelete = !!mgr || (j.created_by === me.id && ['New', 'Queued', 'Cancelled'].includes(j.lifecycle_status));
@@ -361,7 +366,7 @@ async function viewJob(id) {
   const move = (to, label, cls = '', needReason = false) => acts.push({ to, label, cls, needReason });
   if (!isClosed(j)) {
     if (!j.current_assignee_id && !(mgr || fd)) acts.push({ accept: true, label: 'Accept job' });
-    if (j.lifecycle_status === 'New' && (mgr || fd)) move('Queued', 'Release to production');
+    if (j.lifecycle_status === 'New' && (mgr || fd)) move('Queued', 'Release to production', 'primary');
     if (j.lifecycle_status === 'Queued' && (owner || mgr)) move('In Production', 'Start', 'primary', !owner);
     if (j.lifecycle_status === 'In Production' && (owner || mgr)) { move('Finishing', 'Send to finishing', '', !owner); move('Ready for Collection', 'Mark ready', 'primary', !owner); }
     if (j.lifecycle_status === 'Finishing' && (owner || mgr)) move('Ready for Collection', 'Mark ready', 'primary', !owner);
@@ -377,23 +382,13 @@ async function viewJob(id) {
   const newerThanApproval = approved && (files || []).some((f) => f.category !== 'Supporting Document' && f.uploaded_at > approved.uploaded_at);
   const size = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 
-  const histHtml = (hist || []).map((h) => {
-    const who = h.actor?.display_name || 'System';
-    const name = { 'job.created': 'created the job', 'job.assigned': 'changed the owner or department', 'job.unassigned': 'removed the owner', 'job.details_changed': 'changed the details',
-      'file.uploaded': 'uploaded a file', 'job.artwork_approved': 'approved artwork', 'job.artwork_approval_withdrawn': 'withdrew artwork approval',
-      'job.problem_raised': 'reported a problem', 'job.problem_resolved': 'resolved a problem', 'job.handoff_sent': 'sent a handoff',
-      'job.handoff_accepted': 'accepted a handoff', 'job.handoff_cancelled': 'cancelled a handoff',
-      'job.picture_approved': 'approved a picture', 'job.picture_approval_withdrawn': 'took back a picture approval' }[h.action]
-      || (h.action.startsWith('job.status_') ? `changed status: ${esc(h.before?.lifecycle_status)} → <b>${esc(h.after?.lifecycle_status)}</b>` : esc(h.action));
-    return `<li><div>${window.pgAvatar(who, 20)} <b>${esc(who)}</b> ${name}${h.action === 'file.uploaded' && h.after ? ` — ${esc(h.after.file_name)} (${esc(h.after.category)})` : ''}${h.action === 'job.handoff_sent' && h.after ? ` — <i>${esc(h.after.note)}</i>` : ''}${h.reason ? ` — <i>${esc(h.reason)}</i>` : ''}</div><div class="when">${esc(fmt(h.created_at))}</div></li>`;
-  }).join('') || '<li class="note">No history yet.</li>';
-
   const steps = ['New', 'Queued', 'In Production', 'Finishing', 'Ready for Collection', 'Collected'];
   const stepper = j.lifecycle_status === 'Cancelled' ? '' : `<ol class="stepper" aria-label="Job progress">${steps.map((t, k) => `<li class="${k < idx ? 'done' : k === idx ? 'cur' : ''}" ${k === idx ? 'aria-current="step"' : ''}>${esc(t.replace('Ready for Collection', 'Ready'))}</li>`).join('')}</ol>`;
   shell('jobs', `<div class="crumb"><a href="#/jobs">Jobs</a> / <span>#${j.job_number}</span><span class="spacer"></span><a href="#/chat/job/${j.id}">${ic('chat')} Job chat</a></div>
     <div class="card"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start"><div><h2 style="margin:0 0 4px">#${j.job_number} · ${esc(j.customer_name)}</h2><div class="sub" style="font-size:14px">${esc(j.description)}</div></div>
       <div>${stBadge(j)}${j.priority === 'Rush' ? '<span class="badge rush">Rush</span>' : ''}${isLate(j) ? '<span class="badge late">Overdue</span>' : ''}</div></div>
       ${stepper}
+      ${lastAct}
       <div class="facts"><div><span>Due</span><b>${esc(fmt(j.due_at))}</b></div><div><span>Department</span><b>${esc(j.departments?.name || '—')}</b></div><div><span>Owner</span><b>${j.assignee ? window.pgAvatar(j.assignee.display_name, 22) + ' ' + esc(j.assignee.display_name) : 'Unassigned'}</b></div><div><span>Quantity</span><b class="tnum">${j.quantity}</b></div></div>
       <dl class="kv" style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)"><dt>Product</dt><dd>${esc(j.product || '—')}</dd><dt>Size</dt><dd>${esc(j.size || '—')}</dd>
         <dt>Material</dt><dd>${esc(j.material || '—')}</dd><dt>Finishing</dt><dd>${esc(j.finishing || '—')}</dd><dt>Customer phone</dt><dd>${esc(j.customer_phone || '—')}</dd>
@@ -433,7 +428,8 @@ async function viewJob(id) {
       <div class="actions"><button data-act="handoff">Hand off to another department…</button></div></div>` : ''}
     </div>
     <div id="jobtasks"></div>
-    <div class="card"><h3 style="margin-top:0">History</h3><ul class="hist timeline">${histHtml}</ul></div>`);
+    ${actCard}`);
+  window.pgActivity.mount(document.getElementById('activity'));
   if (window.jobTasks) window.jobTasks(id);
 
   const run = async (p) => {

@@ -1,5 +1,5 @@
 'use strict';
-// PressGO "My profile": your picture and your personal look (appearance + accent colour).
+// PressGO profile: your picture (edited on Settings > Profile) and your saved look (loaded after sign-in; edited on Settings > Appearance).
 // Uses helpers from app.js (sb, me, ask, call, toast, esc, friendly) and docs/prefs.js. The rules (who may change what, which
 // files are accepted) are enforced by the database (migrations 0015 and 0016); the checks here only give friendlier messages.
 // Pure functions are exported so they can be tested without a browser.
@@ -105,75 +105,65 @@
     });
   }
 
-  async function openProfile() {
-    const P = root.pgPrefs;
-    const saved = P.get();
-    const draft = { ...saved };
-    let pending = null, previewUrl = null, removing = false;
-    const scheme = document.documentElement.getAttribute('data-scheme') === 'dark' ? 'dark' : 'light';
-    const themes = [['system', 'Match my computer', 'Follows your computer, day and night'], ['light', 'Light', 'Light background'], ['dark', 'Dark', 'Dark background']];
-    const hasPic = !!root.pgAvatarUrl(me.display_name);
-    const asked = ask('My profile', `
-      <div class="fgroup"><h4>Profile picture</h4>
-        <div class="pfrow"><span class="pfprev" id="pfprev">${root.pgAvatar(me.display_name, 72)}</span>
-          <div class="pfctl"><label>Choose a picture<input type="file" id="pffile" accept="image/jpeg,image/png,image/webp"></label>
-            <button type="button" id="pfrm" ${hasPic ? '' : 'hidden'}>Remove my picture</button></div></div>
-        <span class="hint" id="pfhint">JPEG, PNG or WebP. It is cropped to a square. Everyone at PressGO can see it. Without one, your initials are shown.</span></div>
-      <div class="fgroup"><h4>Appearance</h4><div class="optgrid" role="radiogroup" aria-label="Appearance">${themes.map(([v, l, d]) =>
-        `<label class="opt"><input type="radio" name="theme" value="${v}" ${draft.theme === v ? 'checked' : ''}><span><b>${l}</b><small>${d}</small></span></label>`).join('')}</div></div>
-      <div class="fgroup"><h4>Accent colour</h4><div class="optgrid swatches" role="radiogroup" aria-label="Accent colour">${Object.entries(P.ACCENTS).map(([k, a]) =>
-        `<label class="opt"><input type="radio" name="accent" value="${k}" ${draft.accent === k ? 'checked' : ''}><span class="sw" style="background:${a[scheme].btn}" aria-hidden="true"></span><span><b>${esc(a.label)}</b></span></label>`).join('')}</div>
-        <span class="hint">Used for buttons, links and highlights. You see the change straight away; it is kept when you press Save.</span></div>`, 'Save');
-    const form = dlg.querySelector('form'), hint = dlg.querySelector('#pfhint'), prev = dlg.querySelector('#pfprev'), rm = dlg.querySelector('#pfrm');
-    const note = (m, bad) => { hint.textContent = m; hint.style.color = bad ? 'var(--bad)' : ''; };
+  // The picture editor on Settings > Profile. Choosing a picture shows a preview; nothing is stored until "Save picture".
+  function mountPicture(host) {
+    let pending = null, previewUrl = null, removing = false, busy = false;
+    const hasPic = () => !!root.pgAvatarUrl(me.display_name);
     const drop = () => { if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; } };
-    form.addEventListener('change', async (e) => {
-      const t = e.target;
-      if (t.name === 'theme' || t.name === 'accent') { draft[t.name] = t.value; P.apply(draft); return; }
-      if (t.id !== 'pffile') return;
-      const f = t.files[0];
+    const idle = 'JPEG, PNG or WebP. It is cropped to a square. Everyone at PressGO can see it. Without one, your initials are shown.';
+    host.innerHTML = `<div class="pfrow"><span class="pfprev" id="pfprev">${root.pgAvatar(me.display_name, 96)}</span>
+        <div class="pfctl"><label>Choose a picture<input type="file" id="pffile" accept="image/jpeg,image/png,image/webp"></label>
+          <button type="button" id="pfrm" ${hasPic() ? '' : 'hidden'}>Remove my picture</button>
+          <span id="pfsave" hidden><button type="button" class="primary" id="pfgo">Save picture</button> <button type="button" id="pfno">Discard</button></span></div></div>
+      <span class="hint" id="pfhint" role="status">${idle}</span>`;
+    const $ = (s) => host.querySelector(s);
+    const hint = $('#pfhint'), prev = $('#pfprev'), rm = $('#pfrm'), save = $('#pfsave'), file = $('#pffile');
+    const note = (m, bad) => { hint.textContent = m; hint.style.color = bad ? 'var(--bad)' : ''; };
+    const staged = (on) => { save.hidden = !on; };
+    const reset = () => {
+      drop(); pending = null; removing = false; file.value = '';
+      prev.innerHTML = root.pgAvatar(me.display_name, 96); rm.hidden = !hasPic(); staged(false); note(idle, false);
+    };
+    file.addEventListener('change', async () => {
+      const f = file.files[0];
       if (!f) return;
       const v = validateAvatarFile(f);
-      if (!v.ok) { t.value = ''; note(v.error, true); return; }
+      if (!v.ok) { file.value = ''; note(v.error, true); return; }
       try {
         const blob = await processAvatar(f);
         drop(); pending = blob; removing = false; previewUrl = URL.createObjectURL(blob);
-        prev.innerHTML = `<span class="av" style="width:72px;height:72px"><img src="${esc(previewUrl)}" alt="Your new picture"></span>`;
-        rm.hidden = false; note('New picture ready. Press Save to keep it.', false);
-      } catch (err) { t.value = ''; note(err.message, true); }
+        prev.innerHTML = `<span class="av" style="width:96px;height:96px"><img src="${esc(previewUrl)}" alt="Your new picture"></span>`;
+        rm.hidden = false; staged(true); note('New picture ready. Press Save picture to keep it.', false);
+      } catch (err) { file.value = ''; note(err.message, true); }
     });
     rm.addEventListener('click', () => {
-      drop(); pending = null; removing = true; dlg.querySelector('#pffile').value = '';
-      prev.innerHTML = `<span class="av" style="width:72px;height:72px;background:var(--mut)" aria-hidden="true"></span>`;
-      rm.hidden = true; note('Your picture will be removed when you press Save. Your initials will be shown instead.', false);
+      drop(); pending = null; removing = true; file.value = '';
+      prev.innerHTML = `<span class="av" style="width:96px;height:96px;background:var(--mut)" aria-hidden="true"></span>`;
+      rm.hidden = true; staged(true); note('Your picture will be removed when you press Save picture. Your initials will be shown instead.', false);
     });
-
-    const r = await asked;
-    drop();
-    if (!r) { P.apply(saved); return; }                                      // cancelled: undo the live preview
-    const failures = [];
-    const tidy = (path) => { if (path) sb.storage.from(AVATAR.BUCKET).remove([path]).catch(() => {}); };   // best effort: the old file is no longer used
-    try {
-      if (pending) {
-        const old = store.pathByEmp.get(me.id);
-        const path = avatarPath(me.id, crypto.randomUUID());
-        const up = await sb.storage.from(AVATAR.BUCKET).upload(path, pending, { contentType: 'image/jpeg', upsert: false });
-        if (up.error) throw up.error;
-        await call('set_avatar', { p_path: path, p_mime: 'image/jpeg', p_size: pending.size });
-        if (old && old !== path) tidy(old);
-      } else if (removing) {
-        tidy(await call('remove_avatar'));
-      }
-    } catch (err) { failures.push('Your picture was not saved: ' + friendly(err)); }
-    const next = P.normalize(draft);
-    if (next.theme !== saved.theme || next.accent !== saved.accent) {
-      try { await call('set_preferences', { p_theme: next.theme, p_accent: next.accent }); P.apply(next); P.remember(next); }
-      catch (err) { P.apply(saved); failures.push('Your look was not saved: ' + friendly(err)); }
-    } else P.apply(next);
-    await loadAvatars();
-    if (window.chatSidebar) window.chatSidebar();
-    if (failures.length) failures.forEach((m) => toast(m, 'error')); else toast('Profile saved.');
+    $('#pfno').addEventListener('click', reset);
+    $('#pfgo').addEventListener('click', async () => {
+      if (busy) return;
+      busy = true; $('#pfgo').disabled = true;
+      const tidy = (path) => { if (path) sb.storage.from(AVATAR.BUCKET).remove([path]).catch(() => {}); };   // best effort: the old file is no longer used
+      try {
+        if (pending) {
+          const old = store.pathByEmp.get(me.id);
+          const path = avatarPath(me.id, crypto.randomUUID());
+          const up = await sb.storage.from(AVATAR.BUCKET).upload(path, pending, { contentType: 'image/jpeg', upsert: false });
+          if (up.error) throw up.error;
+          await call('set_avatar', { p_path: path, p_mime: 'image/jpeg', p_size: pending.size });
+          if (old && old !== path) tidy(old);
+        } else if (removing) {
+          tidy(await call('remove_avatar'));
+        }
+        await loadAvatars();
+        if (window.chatSidebar) window.chatSidebar();
+        reset(); toast('Picture saved.');
+      } catch (err) { note('Your picture was not saved: ' + friendly(err), true); toast('Your picture was not saved: ' + friendly(err), 'error'); }
+      busy = false; $('#pfgo').disabled = false;
+    });
   }
 
-  return Object.assign(pure, { init, reset, open: openProfile, reload: loadAvatars });
+  return Object.assign(pure, { init, reset, open: () => { root.location.hash = '#/settings'; }, mountPicture, reload: loadAvatars });
 });

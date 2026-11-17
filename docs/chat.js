@@ -51,19 +51,50 @@
 .thread .empty{margin:auto;text-align:center;color:var(--mut);padding:30px}
 .thread .empty h3{color:var(--ink);margin:0 0 6px}
 .thread .th-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.thread .th-ic{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;background:color-mix(in srgb,var(--brand) 13%,transparent);color:var(--brand);font-weight:800}
+.thread .th-ic{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:9px;background:color-mix(in srgb,var(--brand) 10%,var(--card));color:var(--brand);font-weight:800}
 .thread .tt{font-size:17px}.thread .th-l .sub{margin-top:3px}
 .thread .th-job{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:var(--r-sm);background:var(--btn);color:#fff;font-weight:600;font-size:13.5px;white-space:nowrap}
 .thread .th-job:hover{background:var(--btn-h);text-decoration:none}
 .pstat{font-weight:600}.pstat:before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:#8b93a7}
 .pstat.st-on:before,.pstat.on:before{background:#22c55e}.pstat.st-break:before{background:#f5a524}
 .msk{display:grid;gap:18px;padding:12px 0}.msk i{display:block;height:44px;border-radius:12px;max-width:70%;background:linear-gradient(90deg,color-mix(in srgb,var(--mut) 10%,var(--bg)) 25%,color-mix(in srgb,var(--mut) 20%,var(--bg)) 50%,color-mix(in srgb,var(--mut) 10%,var(--bg)) 75%);background-size:200% 100%;animation:pgsk 1.3s linear infinite}.msk i:nth-child(2){max-width:50%}
+.thread .acts{position:absolute;top:-10px;right:46px;display:none;gap:2px;background:var(--card);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:2px;box-shadow:var(--sh-1)}
+.thread .msg:hover .acts,.thread .msg:focus-within .acts{display:flex}
+.thread .acts button{border:0;background:none;color:var(--mut);padding:4px 8px;height:auto;border-radius:6px;cursor:pointer;font-size:12.5px;display:inline-flex;align-items:center;gap:5px}
+.thread .acts button:hover,.thread .acts button:focus-visible{background:color-mix(in srgb,var(--brand) 12%,transparent);color:var(--ink)}
+.thread .quote{display:block;width:100%;max-width:560px;text-align:left;margin:0 0 4px;padding:5px 10px;height:auto;border:0;border-left:3px solid var(--brand);border-radius:6px;background:color-mix(in srgb,var(--mut) 10%,transparent);color:var(--mut);font-size:13px;line-height:1.35;cursor:pointer}
+.thread .quote b{display:block;color:var(--ink);font-size:12.5px}.thread .quote span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thread .quote.gone{cursor:default;font-style:italic}
+.thread .msg.hl{animation:pghl 2.6s ease-out}
+@keyframes pghl{0%,55%{background:color-mix(in srgb,var(--brand) 22%,transparent);box-shadow:0 0 0 2px var(--brand)}100%{background:transparent;box-shadow:0 0 0 2px transparent}}
+@media (prefers-reduced-motion:reduce){.thread .msg.hl{animation:none;background:color-mix(in srgb,var(--brand) 18%,transparent)}}
+.thread .newdiv{display:flex;align-items:center;gap:10px;margin:14px 0 6px;color:var(--brand);font-size:12px;font-weight:700}
+.thread .newdiv:before,.thread .newdiv:after{content:"";flex:1;border-top:1px solid var(--brand)}
+.thread .replybar{display:flex;align-items:center;gap:10px;margin:0 16px;padding:7px 12px;border-left:3px solid var(--brand);border-radius:8px;background:var(--card);color:var(--mut);font-size:13px}
+.thread .replybar[hidden]{display:none}
+.thread .replybar .rb{flex:1;min-width:0;display:grid}.thread .replybar .rb b{color:var(--ink)}.thread .replybar .rb span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thread .replybar button{border:0;background:none;color:var(--mut);cursor:pointer;padding:4px 8px;height:auto;font-size:15px}
+.thread .th-r{display:flex;align-items:center;gap:8px}
+@media(hover:none){.thread .acts{display:flex;position:static;margin-top:4px;border:0;box-shadow:none;background:none;padding:0}}
 `;
   document.head.appendChild(css);
 
   let timer = null, sideTimer = null, rt = null, current = null, convs = [], tch = null, clearTyper = null, curType = null;
+  let divAt = null, lastMsgs = [], viewLimit = 200;      // when you last read the open chat (for the "New messages" line); the messages on screen; how far back they reach
+  const L = window.pgChat;                               // message-link, reply and unread rules (chatlogic.js, tested)
+  const names = new Map();
+  async function nameOf(id) {
+    if (names.has(id)) return names.get(id);
+    const { data } = await sb.from('employees').select('display_name').eq('id', id).maybeSingle();
+    const n = (data && data.display_name) || '';
+    if (n) names.set(id, n);
+    return n;
+  }
+  // the page and the Windows window must be the thing you are actually using for a message to count as seen
+  const inUse = () => document.visibilityState === 'visible' && document.hasFocus();
+  const onVis = () => { if (document.visibilityState === 'visible' && current) loadThread(current); };   // coming back marks the chat read
 
-  const color = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 55% 46%)`; };
+  const color = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return `hsl(${h} 50% 30%)`; };   // dark enough that the white initials stay readable on every hue (4.5:1)
   const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
   // The coloured initials circle is the default avatar. If this person has set a picture (see profile.js) it is drawn on top of the circle.
   const avatar = (n, s) => { const pic = window.pgAvatarUrl ? window.pgAvatarUrl(n) : null; return `<span class="av ${stClass(n)}" data-n="${esc(n)}" style="background:${color(n)}${s ? `;width:${s}px;height:${s}px;font-size:${Math.max(9, Math.round(s * 0.38))}px` : ''}" title="${esc(n)}">${esc(initials(n))}${pic ? `<img src="${esc(pic)}" alt="" draggable="false">` : ''}</span>`; };
@@ -76,6 +107,7 @@
   };
 
   window.chatLeave = function () {
+    document.removeEventListener('visibilitychange', onVis);
     if (timer) { clearInterval(timer); timer = null; }
     if (tch) { sb.removeChannel(tch); tch = null; }
     clearTyper = null;
@@ -130,13 +162,14 @@
 
   // ---------------------------------------------------------------- sidebar (channels + private messages)
   function renderSide() {
+    if (window.pgFx) window.pgFx.unreadMessages(convs.reduce((a, c) => a + (Number(c.unread) || 0), 0));   // unread total in the window title
     const box = document.getElementById('sidechats');
     if (!box) return;
     const item = (c, pre) => `<a class="nav ch ${c.id === current ? 'on' : ''} ${Number(c.unread) ? 'unread' : ''}" href="#/chat/${c.id}"><span class="nm">${c.type === 'direct' ? avatar(c.name, 22) : ''}${pre}${esc(c.name || '')}</span>${Number(c.unread) ? `<span class="dot">${c.unread}</span>` : ''}</a>`;
     const chans = convs.filter((c) => ['general', 'urgent', 'department'].includes(c.type));
     const jobs = convs.filter((c) => c.type === 'job').slice(0, 8);
     const dms = convs.filter((c) => c.type === 'direct');
-    box.innerHTML = `<button type="button" id="brk" class="brk">Take a break</button><h4>Channels</h4>${chans.map((c) => item(c, '# ')).join('') || '<div class="note" style="padding:4px 10px">Loading…</div>'}
+    box.innerHTML = `<button type="button" id="brk" class="brk">Take a break</button><h4>Channels${window.pgShortcuts ? window.pgShortcuts.hintHtml('messages') : ''}</h4>${chans.map((c) => item(c, '# ')).join('') || '<div class="note" style="padding:4px 10px">Loading…</div>'}
       ${jobs.length ? `<h4>Job chats</h4>${jobs.map((c) => item(c, '')).join('')}` : ''}
       <h4>Direct messages <button id="sidenew" title="New private message">+</button></h4>
       ${dms.map((c) => item(c, '')).join('') || '<div class="note" style="padding:4px 10px">No private messages yet.</div>'}`;
@@ -146,18 +179,28 @@
     };
     paintStatus();
   }
-  async function notifyNew(row) {
+  // A new message arrived (from the live connection). Desktop notification when you are away, a sound when the rules say so,
+  // and a small banner when it is private or urgent and you are not already reading that chat.
+  async function onNewMessage(row) {
     try {
       let conv = convs.find((x) => x.id === row.conversation_id);
       if (!conv) { convs = await loadList(); conv = convs.find((x) => x.id === row.conversation_id); }   // a chat that did not exist a moment ago
-      window.pgNotify.message(row, conv, me);
+      if (window.pgNotify) window.pgNotify.message(row, conv, me);
+      if (row.author_id === me.id || row.hidden_at) return;
+      if (window.pgFx) window.pgFx.incoming(row, conv, me.id, current);
+      const reading = current === row.conversation_id && inUse();
+      if (!reading && window.pgFx && window.pgFx.bannersOn() && conv && L.soundAllowed(conv, 'dm')) {
+        const who = (await nameOf(row.author_id)) || 'Someone';
+        const where = conv.type === 'direct' ? '' : (conv.type === 'job' ? ' in ' + conv.name : ' in #' + String(conv.name || 'chat').replace(/^#\s*/, ''));
+        window.pgFx.banner({ title: who + where, body: row.attachment_path ? 'Sent a picture' : row.body, href: L.chatHref(row.conversation_id, row.id) });
+      }
     } catch (e) { /* a notification must never break chat */ }
   }
   function ensureRealtime() {
     if (rt) return;
     rt = sb.channel('chat-all').on('postgres_changes', { event: '*', schema: 'pressgo', table: 'messages' }, (p) => {
       if (clearTyper && p.eventType === 'INSERT') clearTyper(p.new.author_id);
-      if (p.eventType === 'INSERT' && window.pgNotify) notifyNew(p.new);       // Windows app only: desktop notification when you are away
+      if (p.eventType === 'INSERT') onNewMessage(p.new);                       // sound / banner / (Windows app) desktop notification
       if (p.new.conversation_id === current) loadThread(current); else window.chatSidebar();
     }).subscribe();
   }
@@ -216,35 +259,89 @@
   const delBtn = (m) => (!m.hidden_at && (m.author_id === me.id || (me.manager_role && curType !== 'direct'))
     ? `<button type="button" class="del" data-del="${m.id}" title="Delete message" aria-label="Delete message"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg></button>` : '');
 
-  async function loadThread(conv) {
+  // the little quoted preview above a reply: who wrote the original and what it said; clicking it jumps to the original
+  const quoteHtml = (m) => {
+    if (!m.reply_to_id || m.hidden_at) return '';
+    const q = L.quoteInfo(m.reply);
+    return `<button type="button" class="quote${q.gone ? ' gone' : ''}"${q.gone || !q.id ? ' disabled' : ` data-jump="${esc(q.id)}"`} aria-label="${q.gone ? 'The message this replies to is not available' : 'Go to the message this replies to'}"><b>${esc(q.who || 'Message')}</b><span>${esc(q.preview)}</span></button>`;
+  };
+  const actsHtml = (m) => (m.hidden_at ? '' : `<span class="acts"><button type="button" data-reply="${m.id}" title="Reply" aria-label="Reply to this message"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 6 6v3"/></svg>Reply</button>${m.author_id !== me.id ? `<button type="button" data-unread-from="${m.id}" title="Mark as unread from here" aria-label="Mark as unread from this message">Mark unread</button>` : ''}</span>`);
+  // scroll a message into the middle of the screen and flash it so it is easy to spot
+  let lastFlash = null;
+  function flash(el) {
+    el.scrollIntoView({ block: 'center' });
+    el.classList.remove('hl'); void el.offsetWidth; el.classList.add('hl');
+    lastFlash = { id: el.dataset.mid, at: Date.now() };
+    setTimeout(() => el.classList.remove('hl'), 2800);
+  }
+  async function jumpTo(id) {
+    const box = document.getElementById('msgs');
+    const el = box && box.querySelector(`[data-mid="${id}"]`);
+    if (el) return flash(el);
+    if (current) await loadThread(current, { target: id });      // older than what is on screen: load back to it
+  }
+  // used by the router so a link to a message in the chat you already have open just scrolls, without rebuilding the page
+  window.chatSameConv = function (hash) {
+    const p = L.parseChatHash(hash);
+    if (!p || !p.conv || p.conv !== current || !document.getElementById('msgs')) return false;
+    if (p.msg) jumpTo(p.msg);
+    return true;
+  };
+
+  async function loadThread(conv, opts = {}) {
+    let limit = Math.max(200, viewLimit), missing = false;      // a chat opened at an old message keeps reaching back that far while it stays open
+    if (opts.target) {
+      // make sure the page of messages we load reaches back to the one we want (never the whole history)
+      const { data: t } = await sb.from('messages').select('sent_at').eq('id', opts.target).eq('conversation_id', conv).maybeSingle();
+      if (t) {
+        const { count } = await sb.from('messages').select('id', { count: 'exact', head: true }).eq('conversation_id', conv).gte('sent_at', t.sent_at);
+        limit = Math.max(limit, L.windowSize(count, 200, 600));
+        viewLimit = limit;
+      } else missing = true;
+    }
     const { data, error } = await sb.from('messages')
-      .select('id,body,sent_at,author_id,attachment_path,attachment_name,hidden_at,approved_by,approved_at,author:author_id(display_name),approver:approved_by(display_name)')
-      .eq('conversation_id', conv).order('sent_at', { ascending: false }).limit(200);
+      .select('id,body,sent_at,author_id,reply_to_id,attachment_path,attachment_name,hidden_at,approved_by,approved_at,author:author_id(display_name),approver:approved_by(display_name),reply:reply_to_id(id,body,hidden_at,attachment_path,author:author_id(display_name))')
+      .eq('conversation_id', conv).order('sent_at', { ascending: false }).limit(limit);
     const box = document.getElementById('msgs');
     if (!box || current !== conv) return;
     if (error) { box.innerHTML = `<div class="err">${esc(friendly(error))}</div>`; return; }
     const msgs = (data || []).reverse();
+    lastMsgs = msgs;
     await signPics(msgs.filter((m) => m.attachment_path).map((m) => m.attachment_path));
     if (current !== conv) return;
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+    const unreadAt = L.firstUnreadIndex(msgs, divAt, me.id);
     let lastDay = '', lastAuthor = '', lastT = 0;
-    box.innerHTML = msgs.map((m) => {
+    box.innerHTML = msgs.map((m, i) => {
       let h = '';
       const day = new Date(m.sent_at).toDateString(), t = +new Date(m.sent_at);
       if (day !== lastDay) { h += `<div class="day"><span>${esc(dayLabel(m.sent_at))}</span></div>`; lastAuthor = ''; }
+      if (i === unreadAt) { h += '<div class="newdiv" id="newdiv" role="separator"><span>New messages</span></div>'; lastAuthor = ''; }
       const cont = m.author_id === lastAuthor && t - lastT < 5 * 60000;
       lastDay = day; lastAuthor = m.author_id; lastT = t;
       const name = m.author_id === me.id ? 'You' : (m.author?.display_name || '?');
+      const inner = `${quoteHtml(m)}${bodyHtml(m)}${delBtn(m)}${actsHtml(m)}`;
       h += cont
-        ? `<div class="msg cont ${m.author_id === me.id ? 'mine' : ''}"><span class="gut">${esc(timeOf(m.sent_at))}</span><div class="bd">${bodyHtml(m)}${delBtn(m)}</div></div>`
-        : `<div class="msg ${m.author_id === me.id ? 'mine' : ''}">${avatar(name === 'You' ? me.display_name : name)}<div><div class="hd"><b>${esc(name)}</b><span class="tm">${esc(timeOf(m.sent_at))}</span></div><div class="bd">${bodyHtml(m)}${delBtn(m)}</div></div></div>`;
+        ? `<div class="msg cont ${m.author_id === me.id ? 'mine' : ''}" data-mid="${m.id}"><span class="gut">${esc(timeOf(m.sent_at))}</span><div class="bd">${inner}</div></div>`
+        : `<div class="msg ${m.author_id === me.id ? 'mine' : ''}" data-mid="${m.id}">${avatar(name === 'You' ? me.display_name : name)}<div><div class="hd"><b>${esc(name)}</b><span class="tm">${esc(timeOf(m.sent_at))}</span></div><div class="bd">${inner}</div></div></div>`;
       return h;
     }).join('') || '<div class="empty"><h3>No messages yet</h3>Say hello below.</div>';
-    if (atBottom || box.dataset.first !== '1') box.scrollTop = box.scrollHeight;
+    if (opts.target) {
+      const el = missing ? null : box.querySelector(`[data-mid="${opts.target}"]`);
+      if (el) flash(el);
+      else { window.pgToast('That message is no longer available.', 'error'); box.scrollTop = box.scrollHeight; }
+    } else if (atBottom || box.dataset.first !== '1') box.scrollTop = box.scrollHeight;
+    if (lastFlash && Date.now() - lastFlash.at < 2800) {      // the list was redrawn while the flash was running: carry on where it left off
+      const f = box.querySelector(`[data-mid="${lastFlash.id}"]`), done = Date.now() - lastFlash.at;
+      if (f && !f.classList.contains('hl')) { f.style.animationDelay = '-' + done + 'ms'; f.classList.add('hl'); setTimeout(() => f.classList.remove('hl'), 2800 - done); }
+    }
     box.dataset.first = '1';
-    await sb.rpc('mark_read', { p_conv: conv });
-    convs = convs.map((c) => (c.id === conv ? { ...c, unread: 0 } : c));
-    renderSide();
+    // only count the chat as read when you can actually see it (not while PressGO is hidden behind other windows)
+    if (document.visibilityState === 'visible') {
+      await sb.rpc('mark_read', { p_conv: conv });
+      convs = convs.map((c) => (c.id === conv ? { ...c, unread: 0 } : c));
+      renderSide();
+    }
   }
 
   async function newDirect() {
@@ -280,13 +377,13 @@
 
   window.viewChat = async function (hash) {
     window.chatLeave();
-    let conv = null;
-    const m = hash.match(/^#\/chat\/([0-9a-f-]{36})$/);
-    const jm = hash.match(/^#\/chat\/job\/([0-9a-f-]{36})$/);
-    if (m) conv = m[1];
-    if (jm) {
-      const { data } = await sb.from('conversations').select('id').eq('job_id', jm[1]).maybeSingle();
-      if (data) { location.hash = '#/chat/' + data.id; return; }
+    viewLimit = 200;                                    // a fresh chat starts with the usual window
+    let conv = null, target = null;
+    const ph = L.parseChatHash(hash);                   // #/chat/<chat>, #/chat/<chat>/<message> or #/chat/job/<job>
+    if (ph && ph.conv) { conv = ph.conv; target = ph.msg; }
+    if (ph && ph.job) {
+      const { data } = await sb.from('conversations').select('id').eq('job_id', ph.job).maybeSingle();
+      if (data) { location.hash = L.chatHref(data.id); return; }
       return shell('chat', '<div class="card"><h2>Job chat</h2><p class="note">This job\'s chat isn\'t available to you.</p><a href="#/jobs">Back to jobs</a></div>');
     }
     shell('chat', '');
@@ -317,17 +414,40 @@
       : info.type === 'job' ? 'Everyone working on this job'
       : info.type === 'department' ? 'Department channel — this department and managers' : info.type === 'urgent' ? 'Urgent updates for everyone' : 'Everyone at PressGO';
     const who = info.type === 'direct' ? `<span class="pstat" data-n="${esc(info.name)}"></span>` : `<span class="pstat on" id="onl"></span>`;
-    main.innerHTML = `<div class="thread"><div class="th-head"><div class="th-l"><div class="ttl">${info.type === 'direct' ? avatar(info.name, 34) : `<span class="th-ic">${isChan ? '#' : window.pgIcon('jobs')}</span>`}<span class="tt">${esc(info.name || '')}</span></div><div class="sub">${sub} · ${who}</div></div>${info.type === 'job' && info.job_id ? `<a class="th-job" href="#/job/${info.job_id}">${window.pgIcon('jobs')} Open job</a>` : ''}</div>
+    main.innerHTML = `<div class="thread"><div class="th-head"><div class="th-l"><div class="ttl">${info.type === 'direct' ? avatar(info.name, 34) : `<span class="th-ic">${isChan ? '#' : window.pgIcon('jobs')}</span>`}<span class="tt">${esc(info.name || '')}</span></div><div class="sub">${sub} · ${who}</div></div><div class="th-r"><button type="button" class="sm" id="mkun" title="Mark this chat as unread and go back to the list">Mark as unread</button>${info.type === 'job' && info.job_id ? `<a class="th-job" href="#/job/${info.job_id}">${window.pgIcon('jobs')} Open job</a>` : ''}</div></div>
       <div class="msgs" id="msgs"><div class="msk" aria-busy="true" aria-label="Loading messages"><i></i><i></i><i></i></div></div>
       <div class="typing" id="typing" hidden></div>
       <div class="pend" id="pend" hidden></div>
+      <div class="replybar" id="replybar" hidden></div>
       <form class="send" id="sendf"><button type="button" class="clip" id="clip" title="Add a picture" aria-label="Add a picture"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg></button><input type="file" id="pic" accept="image/*" hidden><textarea name="body" maxlength="4000" rows="1" placeholder="Message ${esc(info.name || '')}"></textarea><button class="primary" type="submit">Send</button></form></div>`;
-    await loadThread(conv);
+    // when did I last read this chat? (before opening it marks it read) - the "New messages" line goes after that moment
+    divAt = null;
+    try { const { data: rd } = await sb.from('conversation_reads').select('last_read_at').eq('conversation_id', conv).maybeSingle(); divAt = rd ? rd.last_read_at : null; } catch (e) { /* no marker, that is fine */ }
+    document.addEventListener('visibilitychange', onVis);
+    await loadThread(conv, { target });
     paintStatus();
     const f = document.getElementById('sendf'), ta = f.body;
-    ta.focus();
+    if (!target) ta.focus();
+    // ---- replying: pick a message, a bar shows who and what you reply to, Esc or x cancels
+    let replyTo = null;
+    const rbar = document.getElementById('replybar');
+    const setReply = (r) => {
+      replyTo = r;
+      if (!r) { rbar.hidden = true; rbar.innerHTML = ''; ta.placeholder = 'Message ' + (info.name || ''); return; }
+      rbar.hidden = false;
+      rbar.innerHTML = `<div class="rb"><span>Replying to <b>${esc(r.who)}</b></span><span>${esc(r.preview)}</span></div><button type="button" id="rbx" aria-label="Cancel reply" title="Cancel reply">✕</button>`;
+      rbar.querySelector('#rbx').onclick = () => { setReply(null); ta.focus(); };
+      ta.placeholder = 'Write your reply';
+      ta.focus();
+    };
+    document.getElementById('mkun').onclick = async () => {
+      try { await call('mark_unread', { p_conv: conv }); window.pgToast('Marked as unread.'); location.hash = '#/chat'; window.chatSidebar(); } catch (e) { window.pgToast(friendly(e), 'error'); }
+    };
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
-    ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); } };
+    ta.onkeydown = (e) => {
+      if (e.key === 'Escape' && replyTo) { e.preventDefault(); setReply(null); return; }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); }
+    };
     const msgsEl = document.getElementById('msgs');
     msgsEl.onkeydown = (e) => {
       const pv = e.target.closest?.('[data-view]');
@@ -336,6 +456,20 @@
     msgsEl.onclick = async (e) => {
       const pv = e.target.closest('[data-view]');
       if (pv) { e.preventDefault(); window.pgViewImage(pv.dataset.view, pv.getAttribute('alt')); return; }
+      const rp = e.target.closest('[data-reply]');
+      if (rp) {
+        const rm = lastMsgs.find((x) => x.id === rp.dataset.reply);
+        if (rm) setReply({ id: rm.id, who: rm.author_id === me.id ? 'yourself' : (rm.author?.display_name || 'someone'), preview: L.quoteInfo(rm).preview });
+        return;
+      }
+      const jp = e.target.closest('[data-jump]');
+      if (jp) { jumpTo(jp.dataset.jump); return; }
+      const uf = e.target.closest('[data-unread-from]');
+      if (uf) {
+        try { await call('mark_unread', { p_conv: conv, p_msg: uf.dataset.unreadFrom }); window.pgToast('Marked as unread from that message.'); location.hash = '#/chat'; window.chatSidebar(); }
+        catch (err) { window.pgToast(friendly(err), 'error'); }
+        return;
+      }
       const ap = e.target.closest('[data-appr],[data-unappr]');
       if (ap) {
         const un = !!ap.dataset.unappr;
@@ -406,10 +540,11 @@
           const path = `${conv}/${crypto.randomUUID()}-${safe}`;
           const up = await sb.storage.from('chat-files').upload(path, file, { contentType: file.type, upsert: false });
           if (up.error) throw up.error;
-          await call('send_attachment', { p_conv: conv, p_caption: text, p_path: path, p_name: file.name, p_mime: file.type, p_size: file.size });
+          // p_reply is only sent when replying, so an ordinary picture is sent exactly as before
+          await call('send_attachment', { p_conv: conv, p_caption: text, p_path: path, p_name: file.name, p_mime: file.type, p_size: file.size, ...(replyTo ? { p_reply: replyTo.id } : {}) });
           URL.revokeObjectURL(pending.preview); pending = null; showPend();
-        } else await call('send_message', { p_conv: conv, p_body: text });
-        ta.value = ''; ta.style.height = '44px'; await loadThread(conv); window.chatSidebar();
+        } else await call('send_message', { p_conv: conv, p_body: text, ...(replyTo ? { p_reply: replyTo.id } : {}) });
+        ta.value = ''; ta.style.height = '44px'; setReply(null); await loadThread(conv); window.chatSidebar();
       } catch (err) { window.pgToast(friendly(err), 'error'); }
       btn.disabled = false;
       ta.focus();

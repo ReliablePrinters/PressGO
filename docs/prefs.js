@@ -9,15 +9,16 @@
   else { root.pgPrefs = api; api.start(); }
 })(typeof self !== 'undefined' ? self : this, function () {
   const THEMES = ['system', 'light', 'dark'];
-  // The accent changes buttons, links and highlights. Every colour here is checked for readable contrast in
-  // desktop/test/prefs-web.test.js, and must match the same colours in style.css and the list in migration 0016.
+  // The accent changes buttons, links and highlights. Every colour here is checked for readable contrast (on the page, cards and raised
+  // surfaces) in desktop/test/prefs-web.test.js, and must match the same colours in style.css and the list in migration 0016.
   // brand = links and highlights (text on the page), btn = button fill (white text on it), btnH = button hover.
   const ACCENTS = {
-    purple:   { label: 'Purple',   light: { brand: '#5b2a9d', btn: '#5b2a9d', btnH: '#4d2287' }, dark: { brand: '#b394ee', btn: '#7a4cd0', btnH: '#8a60dc' } },
-    blue:     { label: 'Blue',     light: { brand: '#1d4ed8', btn: '#1d4ed8', btnH: '#1e40af' }, dark: { brand: '#8fb4ff', btn: '#2f66e0', btnH: '#2457cc' } },
+    // The default. Its stored name stays "purple" because the database already lists that name; it is Press Blue (from the logo).
+    purple:   { label: 'Press Blue', light: { brand: '#0a6a9e', btn: '#0a6a9e', btnH: '#085784' }, dark: { brand: '#5cc0f2', btn: '#0a6fa8', btnH: '#095f90' } },
+    blue:     { label: 'Royal blue',     light: { brand: '#1d4ed8', btn: '#1d4ed8', btnH: '#1e40af' }, dark: { brand: '#8fb4ff', btn: '#2f66e0', btnH: '#2457cc' } },
     teal:     { label: 'Teal',     light: { brand: '#0f766e', btn: '#0f766e', btnH: '#115e59' }, dark: { brand: '#5eead4', btn: '#0e7a70', btnH: '#0b6a61' } },
-    green:    { label: 'Green',    light: { brand: '#15803d', btn: '#15803d', btnH: '#166534' }, dark: { brand: '#6ee7a0', btn: '#147d40', btnH: '#106e37' } },
-    orange:   { label: 'Orange',   light: { brand: '#b45309', btn: '#b45309', btnH: '#92400e' }, dark: { brand: '#fdba74', btn: '#b9500a', btnH: '#a24509' } },
+    green:    { label: 'Green',    light: { brand: '#13763a', btn: '#13763a', btnH: '#115c2e' }, dark: { brand: '#6ee7a0', btn: '#147d40', btnH: '#106e37' } },
+    orange:   { label: 'Orange',   light: { brand: '#a84c08', btn: '#a84c08', btnH: '#8a3f07' }, dark: { brand: '#fdba74', btn: '#b9500a', btnH: '#a24509' } },
     graphite: { label: 'Graphite', light: { brand: '#475569', btn: '#475569', btnH: '#334155' }, dark: { brand: '#b6c2d4', btn: '#5a6b82', btnH: '#4c5c72' } }
   };
   const DEFAULTS = Object.freeze({ theme: 'system', accent: 'purple' });
