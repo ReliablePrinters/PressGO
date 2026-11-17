@@ -156,6 +156,12 @@ function createWindow() {
   win.on('closed', () => {
     win = null;
   });
+  // Local PressGO Test build only (TEST_BUILD is set from test-override.json, which the real build never contains): the window title
+  // always starts with "TEST", so this window can never be mistaken for the real PressGO.
+  if (TEST_BUILD) {
+    win.setTitle('TEST - PressGO');
+    win.webContents.on('page-title-updated', (event, title) => { event.preventDefault(); win.setTitle('TEST - ' + title); });
+  }
 
   // The startup splash. In the local test build only, it can be made to start slowly, fail or crash (see startup/README.md).
   const startupTest = TEST_BUILD ? {

@@ -9,9 +9,13 @@
 // database. Signing in with such a build talks to LIVE data. To test against an isolated test project, serve a copy of the site
 // whose config.js points at the test project and pass its local address with --url (only http://localhost or 127.0.0.1 is accepted).
 // Nothing here publishes anything or touches GitHub, Supabase or the real PressGO.
+// SEPARATION (see build-identity.js): the test build also has its own app name and product name, so it uses its OWN profile folder
+// (%APPDATA%\PressGO Test) and its OWN update cache (%LOCALAPPDATA%\pressgo-desktop-test-updater), never the real PressGO's
+// (%APPDATA%\PressGO and %LOCALAPPDATA%\pressgo-desktop-updater). The build stops if the two could ever match, and re-checks what it packed.
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { TEST_IDENTITY, assertSeparate, verifyBuilt } = require('./build-identity');
 
 const version = process.argv[2];
 if (!/^\d+\.\d+\.\d+$/.test(version || '')) { console.error('Give a version, for example: node try-build.js 1.1.0'); process.exit(1); }
@@ -20,7 +24,9 @@ const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'ut
 const cfg = JSON.parse(JSON.stringify(pkg.build));
 cfg.appId = 'com.reliableprinters.pressgo.test';
 cfg.productName = 'PressGO Test';
-cfg.extraMetadata = { version, pgAppId: 'com.reliableprinters.pressgo.test' };
+cfg.extraMetadata = { version, pgAppId: 'com.reliableprinters.pressgo.test', ...TEST_IDENTITY };   // name + productName: own profile folder and update cache
+const prodIdentity = { name: pkg.name, productName: pkg.productName, appId: pkg.build.appId };
+assertSeparate(prodIdentity, { ...TEST_IDENTITY, appId: cfg.appId });                              // throws (and the build stops) if they could collide
 cfg.directories = { output: 'dist-test/' + version, buildResources: 'build' };
 cfg.files = [...cfg.files, 'test-override.json'];
 cfg.publish = [{ provider: 'generic', url: 'http://localhost:8099/' }];
@@ -46,4 +52,9 @@ try {
   fs.rmSync(path.join(__dirname, 'test-override.json'), { force: true });
   fs.rmSync(path.join(__dirname, '.test-config.json'), { force: true });
 }
+// Re-check what was really packed (app.asar package.json and app-update.yml), not just the config.
+const packed = verifyBuilt(path.join(__dirname, 'dist-test', version, 'win-unpacked'), prodIdentity);
+console.log('\nSeparation check passed. The test build uses its own folders:');
+console.log('  profile      %APPDATA%\\' + packed.test.userDataFolder + '        (real PressGO: %APPDATA%\\' + packed.production.userDataFolder + ')');
+console.log('  update cache %LOCALAPPDATA%\\' + packed.updaterCacheDirName + '   (real PressGO: %LOCALAPPDATA%\\' + packed.production.updaterCacheFolder + ')');
 console.log('\nDone. Installer: dist-test/' + version + '/PressGO-Test-Setup.exe');
