@@ -135,6 +135,81 @@ test('background check while offline stays silent; a clicked check shows the pro
   assert.match(s.message, /internet connection/);
 });
 
+// The real electron-updater reports ONE failure TWICE: it emits 'error' and then the same call rejects (AppUpdater.js: downloadUpdate and
+// checkForUpdates both dispatchError(e) and rethrow). The rig above fakes only one of the two at a time, which hid a bug where the second
+// report wiped the message and the screen silently fell back to "Update available". These tests reproduce the real sequence.
+const lastMessageShown = (r) => (r.sent.length ? r.sent[r.sent.length - 1] : null);
+const tick = async () => { await new Promise((x) => setImmediate(x)); await new Promise((x) => setImmediate(x)); };
+
+test('REGRESSION: a rejected update (checksum) is reported twice by the library, the first message stays on screen', async () => {
+  const r = rig();
+  const bad = new Error('sha512 checksum mismatch, expected abc, got def');
+  r.au.checkForUpdates = async () => { r.au.emit('update-available', { version: '1.2.0' }); };
+  r.au.downloadUpdate = async () => { r.au.calls.push('download'); r.au.emit('error', bad); throw bad; };   // event first, then the rejection
+  await r.up.check(true);
+  await r.call('update:start');
+  await tick();
+  const s = r.up.state();
+  assert.equal(s.status, 'error');
+  assert.match(s.message, /did not pass the safety check/);
+  // Nothing may be sent to the screen after the error that clears it or moves away from it.
+  const firstError = r.sent.findIndex((x) => x.status === 'error');
+  assert.ok(firstError > -1);
+  assert.deepEqual(r.sent.slice(firstError).map((x) => x.status), ['error']);
+  assert.match(lastMessageShown(r).message, /did not pass the safety check/);
+  // Nothing was installed.
+  assert.deepEqual(r.au.calls.filter((c) => Array.isArray(c)), []);
+  r.advance(120000);
+  await r.call('update:install'); await tick();
+  assert.deepEqual(r.au.calls.filter((c) => Array.isArray(c)), []);
+});
+
+test('REGRESSION: a failed clicked check is also reported twice and keeps its message', async () => {
+  const r = rig();
+  const down = new Error('net::ERR_INTERNET_DISCONNECTED');
+  r.au.checkForUpdates = async () => { r.au.emit('error', down); throw down; };
+  await r.up.check(true);
+  await tick();
+  const s = r.up.state();
+  assert.equal(s.status, 'error');
+  assert.match(s.message, /internet connection/);
+  assert.match(lastMessageShown(r).message, /internet connection/);
+});
+
+test('a repeat report is ignored but a genuinely new attempt can still report its own result', async () => {
+  const r = rig();
+  const bad = new Error('sha512 checksum mismatch');
+  r.au.checkForUpdates = async () => { r.au.emit('update-available', { version: '1.2.0' }); };
+  r.au.downloadUpdate = async () => { r.au.emit('error', bad); throw bad; };
+  await r.up.check(true);
+  await r.call('update:start'); await tick();
+  assert.match(r.up.state().message, /safety check/);
+  // "Try again": a new clicked check that now fails for a different reason replaces the old message (the error state is not frozen).
+  r.advance(120000);
+  const down = new Error('net::ERR_INTERNET_DISCONNECTED');
+  r.au.checkForUpdates = async () => { r.au.emit('error', down); throw down; };
+  await r.call('update:check'); await tick();
+  assert.equal(r.up.state().status, 'error');
+  assert.match(r.up.state().message, /internet connection/);
+  // And a successful retry works normally afterwards.
+  r.advance(120000);
+  r.au.checkForUpdates = async () => { r.au.emit('update-available', { version: '1.2.0' }); };
+  await r.call('update:check'); await tick();
+  assert.equal(r.up.state().status, 'available');
+});
+
+test('the safety check is not weakened: a rejected download never reaches install, even if the page asks to install', async () => {
+  const r = rig();
+  const bad = new Error('sha512 checksum mismatch');
+  r.au.checkForUpdates = async () => { r.au.emit('update-available', { version: '1.2.0' }); };
+  r.au.downloadUpdate = async () => { r.au.emit('error', bad); throw bad; };
+  await r.up.check(true);
+  await r.call('update:start'); await tick();
+  const s = await r.call('update:install'); await tick();
+  assert.equal(s.status, 'error');
+  assert.deepEqual(r.au.calls.filter((c) => Array.isArray(c)), []);
+});
+
 test('release not published yet (404) gives a calm message', () => {
   assert.match(friendlyError(new Error('Cannot find latest.yml in the latest release artifacts (404)')), /not available/);
 });
