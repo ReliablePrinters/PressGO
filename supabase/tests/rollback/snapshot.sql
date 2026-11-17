@@ -1,6 +1,6 @@
--- Rollback test, step 1 (run on a database that has migrations 0001-0014 ONLY, before 0015-0017 are applied).
+-- Rollback test, step 1 (run on a database that has migrations 0001-0014 ONLY, before 0015-0018 are applied).
 -- Records what the structure of the database looks like (functions, rules, triggers, columns, constraints, table rights,
--- storage buckets). After 0015-0017 are applied and rolled back, the same snapshot must be identical.
+-- storage buckets). After 0015-0018 are applied and rolled back, the same snapshot must be identical.
 create schema rbcheck;
 create function rbcheck.snapshot() returns table(what text, item text) language sql stable set search_path = pg_catalog as $$   -- fixed, so the text does not depend on the caller's search_path
   select 'function'::text, p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')='

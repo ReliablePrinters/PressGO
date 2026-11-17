@@ -1,4 +1,4 @@
--- Rollback test, step 5: restore the deleted job with the "restore" SQL from FEATURE-UPDATE-NOTES.md, run the three rollback
+-- Rollback test, step 5: restore the deleted job with the "restore" SQL from FEATURE-UPDATE-NOTES.md, run the four rollback
 -- files in the documented reverse order, then check that the database is structurally identical to what it was before 0015.
 \set ON_ERROR_STOP on
 set search_path = pressgo, public;
@@ -16,6 +16,7 @@ update pressgo.jobs set deleted_at = null, deleted_by = null, delete_reason = nu
 alter table pressgo.jobs enable trigger jobs_frozen;
 select pg_temp.expect_count($$select 1 from jobs where deleted_at is not null$$, 0, 'the restore left no deleted job');
 
+\ir ../../rollbacks/0018_rollback.sql
 \ir ../../rollbacks/0017_rollback.sql
 \ir ../../rollbacks/0016_rollback.sql
 \ir ../../rollbacks/0015_rollback.sql
@@ -24,7 +25,7 @@ delete from storage.objects where bucket_id = 'avatars';
 delete from storage.buckets where id = 'avatars';
 
 select pg_temp.expect_count($$select what, item from rbcheck.snapshot() except select what, item from rbcheck.before$$, 0,
-  'nothing exists now that did not exist before 0015');
+  'nothing exists now that did not exist before 0015 (0018 included)');
 select pg_temp.expect_count($$select what, item from rbcheck.before except select what, item from rbcheck.snapshot()$$, 0,
   'nothing that existed before 0015 is missing or different now');
 
@@ -38,4 +39,7 @@ select pg_temp.as_user('10000000-0000-0000-0000-0000000000a2');
 select create_job('70000000-0000-0000-0000-000000000003','After',null,'cards',null,10,null,null,null,now()+interval '2 days','Normal',pg_temp.dept('Novelty'),null,true);
 select pg_temp.expect_count($$select 1 from jobs where customer_name = 'After'$$, 1, 'creating a job still works');
 reset role;
-select 'PASSED: rollback of 0015-0017' as result;
+-- the old messaging behaviour is back: mark_unread and the alert link columns are gone
+select pg_temp.expect_count($$select 1 from pg_proc where pronamespace = 'pressgo'::regnamespace and proname = 'mark_unread'$$, 0, 'mark_unread is gone');
+select pg_temp.expect_count($$select 1 from information_schema.columns where table_schema = 'pressgo' and table_name = 'notifications' and column_name in ('conversation_id', 'message_id')$$, 0, 'the alert link columns are gone');
+select 'PASSED: rollback of 0015-0018' as result;

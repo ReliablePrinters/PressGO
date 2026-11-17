@@ -66,7 +66,7 @@ for m in "$DIR"/../migrations/*.sql; do n=$((n + 1)); b=$(basename "$m"); [ "$((
 echo
 
 echo "Permission tests (each on a fresh database built from all migrations)"
-for t in 0001_foundation_test 0002_job_core_test 0003_files_holds_handoffs_test 0005_chat_test 0007_tasks_alerts_test 0008_assigned_jobs_test 0009_chat_images_test 0010_delete_messages_test 0011_approve_pictures_test 0012_break_status_test 0013_close_direct_writes_test 0014_artwork_approval_roles_test 0015_avatars_test 0016_preferences_test 0017_delete_job_test; do
+for t in 0001_foundation_test 0002_job_core_test 0003_files_holds_handoffs_test 0005_chat_test 0007_tasks_alerts_test 0008_assigned_jobs_test 0009_chat_images_test 0010_delete_messages_test 0011_approve_pictures_test 0012_break_status_test 0013_close_direct_writes_test 0014_artwork_approval_roles_test 0015_avatars_test 0016_preferences_test 0017_delete_job_test 0018_message_links_test search_permissions_test activity_history_test mywork_permissions_test; do
   db="t_${t}"
   if ! newdb "$db" || ! migrate "$db"; then bad "$t (could not build the database)" "$LOG/$db.setup"; continue; fi
   "${P[@]}" -d "$db" -f "$DIR/$t.sql" >"$LOG/$t.out" 2>&1; rc=$?
@@ -74,17 +74,17 @@ for t in 0001_foundation_test 0002_job_core_test 0003_files_holds_handoffs_test 
 done
 echo
 
-echo "Rollback test (migrations 0015-0017 applied with data, then undone; the database must end up exactly as before)"
+echo "Rollback test (migrations 0015-0018 applied with data, then undone; the database must end up exactly as before)"
 db="t_rollback"; out="$LOG/rollback.out"; : >"$out"
-if newdb "$db" && migrate "$db" '^001[567]_' \
+if newdb "$db" && migrate "$db" '^001[5678]_' \
    && "${P[@]}" -d "$db" -f "$DIR/rollback/snapshot.sql" >>"$out" 2>&1 \
-   && for m in "$DIR"/../migrations/0015*.sql "$DIR"/../migrations/0016*.sql "$DIR"/../migrations/0017*.sql; do "${P[@]}" -d "$db" -f "$m" >>"$out" 2>&1 || exit 1; done \
+   && for m in "$DIR"/../migrations/0015*.sql "$DIR"/../migrations/0016*.sql "$DIR"/../migrations/0017*.sql "$DIR"/../migrations/0018*.sql; do "${P[@]}" -d "$db" -f "$m" >>"$out" 2>&1 || exit 1; done \
    && "${P[@]}" -d "$db" -f "$DIR/rollback/a_setup.sql" >>"$out" 2>&1; then
   if "${P[@]}" -d "$db" -f "$DIR/../rollbacks/0017_rollback.sql" >"$LOG/guard.out" 2>&1; then
     bad "0017 rollback must REFUSE while a job is deleted, but it ran" "$LOG/guard.out"
   else ok "0017 rollback refuses while a job is deleted"; fi
   "${P[@]}" -d "$db" -f "$DIR/rollback/b_rollback.sql" >>"$out" 2>&1; rc=$?
-  if [ "$rc" = 0 ] && grep -q "PASSED: rollback" "$out"; then ok "rollbacks 0017, 0016, 0015 restore the structure exactly"; else bad "rollbacks 0017, 0016, 0015" "$out"; fi
+  if [ "$rc" = 0 ] && grep -q "PASSED: rollback" "$out"; then ok "rollbacks 0018, 0017, 0016, 0015 restore the structure exactly"; else bad "rollbacks 0018, 0017, 0016, 0015" "$out"; fi
 else bad "rollback test (could not set up)" "$out"; fi
 echo
 

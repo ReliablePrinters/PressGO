@@ -4,3 +4,4 @@ desktop/dist-test/
 desktop/build/
 desktop/test-override.json
 desktop/.test-config.json
+supabase/.temp/

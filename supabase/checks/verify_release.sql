@@ -1,7 +1,7 @@
 -- PressGO: READ-ONLY release checks. Safe to run in the Supabase SQL editor of ANY project: it only reads catalog information
--- (no data is read or changed, nothing is created). Run it on a test project after applying 0001-0017, and on the live
--- project after applying 0015-0017. It returns one table; the expected values are for the schema after 0001-0017.
--- (Before 0015-0017 are applied, the rows about the new features are expected to say false: that is how it tells you what is missing.)
+-- (no data is read or changed, nothing is created). Run it on a test project after applying 0001-0018, and on the live
+-- project after applying 0015-0018. It returns one table; the expected values are for the schema after 0001-0018.
+-- (Before 0015-0018 are applied, the rows about the new features are expected to say false: that is how it tells you what is missing.)
 --
 -- kind = required : every one of these must say ok = true. They check the SHAPE of the security rules: counts, row security,
 --                   who may run the new functions, that they run with the owner's checked powers and a fixed search_path,
@@ -13,12 +13,12 @@
 --                   differently). It never proves that everything is fine on its own. Function fingerprints ignore line endings and
 --                   spacing (all runs of white space count as one space), because the live functions were pasted in from an editor whose
 --                   line endings are not known; a hash of the raw text would differ for that reason alone.
--- Column also_accepted: on three advisory rows (36, 38, 39) a second value is accepted, because the live PressGO project is known to
---                   differ from the repository in exactly one harmless way: its copies of _notify() and create_job() lack one
---                   inline "--" comment each (checked 2026-10-20: every other character is identical, and the other 46 functions are
---                   identical). On the live project those rows are therefore expected to be ok through also_accepted. Any other
---                   change to those two functions, or to any other function, still makes the rows false. Required rows have no
---                   second value.
+-- Column also_accepted: on two advisory rows (36 and 39) a second value is accepted, because the live PressGO project is known to
+--                   differ from the repository in exactly one harmless way: its copy of create_job() lacks one inline "--" comment
+--                   (checked 2026-10-20: every other character is identical, and the other functions are identical). On the live
+--                   project those rows are therefore expected to be ok through also_accepted. Any other change to that function, or to
+--                   any other function, still makes the rows false. Required rows have no second value. (Live's copy of _notify() lacked
+--                   one inline comment too, but migration 0018 replaces _notify(), so after 0018 it matches the repository exactly.)
 -- This check cannot prove that the rules WORK (that is what the tests and the manual checklist are for); it proves the rules that
 -- were installed are the ones that were reviewed. Regenerate the advisory values whenever a migration changes.
 with
@@ -34,7 +34,7 @@ checks(n, kind, check_name, expected, actual) as (
   union all select 2, 'required', 'policies in schema pressgo', '31', (select count(*) from pol)::text
   union all select 3, 'required', 'triggers in schema pressgo', '21',
     (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'pressgo' and not t.tgisinternal)::text
-  union all select 4, 'required', 'functions in schema pressgo', '54', (select count(*) from fn)::text
+  union all select 4, 'required', 'functions in schema pressgo', '55', (select count(*) from fn)::text
   union all select 5, 'required', 'tables WITHOUT row security', '0',
     (select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'pressgo' and c.relkind = 'r' and not c.relrowsecurity)::text
   union all select 6, 'required', 'write privileges for authenticated/anon/PUBLIC on pressgo tables', '0',
@@ -101,21 +101,41 @@ checks(n, kind, check_name, expected, actual) as (
     coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = 'set_preferences'), '(missing)')
   union all select 35, 'advisory', 'fingerprint: _emp_from_path()', 'd07c4a0b87a63618562c36b4ad06cf99',
     coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = '_emp_from_path'), '(missing)')
-  union all select 36, 'advisory', 'fingerprint: ALL 54 functions in schema pressgo combined (live project: see the "also_accepted" value)', '21d2fb22088bc64681399d32daff5dbe',
+  union all select 36, 'advisory', 'fingerprint: ALL 55 functions in schema pressgo combined (live project: see the "also_accepted" value)', '755636c5c00fe4e099d44fd3f3ace11b',
     (select md5(string_agg(x, ',' order by x collate "C")) from (select p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')=' || md5(regexp_replace(pg_get_functiondef(p.oid), '[[:space:]]+', ' ', 'g')) as x from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'pressgo') s)
   union all select 37, 'advisory', 'fingerprint: ALL 31 policies in schema pressgo combined (who, what, rule)', '7e09504e57aa250282a77ecfb9dee4e3',
     (select md5(string_agg(x, ',' order by x collate "C")) from (select tablename || '.' || policyname || '=' || md5(coalesce(cmd, '') || '|' || coalesce(array_to_string(roles, ','), '') || '|' || coalesce(qual, '') || '|' || coalesce(with_check, '')) as x from pg_policies where schemaname = 'pressgo') s)
-  union all select 38, 'advisory', 'fingerprint: _notify() (live project: known comment-only difference, see the note at the top)', 'c8e0814b4b884f6fd4bcdf7a18f9a3a7',
+  union all select 38, 'advisory', 'fingerprint: _notify() (replaced by 0018)', 'd1bdd895de590aa42c7f64cf683fd7a8',
     coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = '_notify'), '(missing)')
   union all select 39, 'advisory', 'fingerprint: create_job() (live project: known comment-only difference, see the note at the top)', '872e0cc6083eafbcda1e60fae0cdbb80',
     coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = 'create_job'), '(missing)')
+  -- ---- 0018 (message links, replies, mark-unread)
+  union all select 40, 'required', 'alerts can point at a chat and a message (columns conversation_id, message_id)', '2',
+    (select count(*) from information_schema.columns where table_schema = 'pressgo' and table_name = 'notifications' and column_name in ('conversation_id', 'message_id'))::text
+  union all select 41, 'required', 'mark_unread(): signed-in people can run it, anon and PUBLIC cannot', 'true',
+    coalesce((select bool_and(has_function_privilege('authenticated', oid, 'execute') and not has_function_privilege('anon', oid, 'execute') and not has_function_privilege('public', oid, 'execute')) from fn where proname = 'mark_unread'), false)::text
+  union all select 42, 'required', 'the old 5-argument _notify() and 6-argument send_attachment() are gone (no ambiguous calls)', '0',
+    (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'pressgo' and ((p.proname = '_notify' and p.pronargs = 5) or (p.proname = 'send_attachment' and p.pronargs = 6)))::text
+  union all select 43, 'required', 'send_attachment, approve_picture, mark_unread and _notify: not runnable by anon or PUBLIC', '0',
+    (select count(*) from fn where proname in ('send_attachment', 'approve_picture', 'mark_unread', '_notify') and (has_function_privilege('anon', oid, 'execute') or has_function_privilege('public', oid, 'execute')))::text
+  union all select 44, 'required', 'those four run with the owner''s checked powers (SECURITY DEFINER) and search_path fixed to pressgo', '4',
+    (select count(*) from fn where proname in ('send_attachment', 'approve_picture', 'mark_unread', '_notify') and prosecdef and proconfig @> array['search_path=pressgo'])::text
+  union all select 45, 'advisory', 'fingerprint: approve_picture()', '2c46a395d220ef94532f421a663687ad',
+    coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = 'approve_picture'), '(missing)')
+  union all select 46, 'advisory', 'fingerprint: send_message()', 'ea369a346367afb631d840ad56cdb3e3',
+    coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = 'send_message'), '(missing)')
+  union all select 47, 'advisory', 'fingerprint: send_attachment()', '2726e3d31f0927facf29c4828da1ee53',
+    coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = 'send_attachment'), '(missing)')
+  union all select 48, 'advisory', 'fingerprint: mark_unread()', 'e0ce69472f6cd90b3cfbd83ea9733081',
+    coalesce((select md5(regexp_replace(pg_get_functiondef(oid), '[[:space:]]+', ' ', 'g')) from fn where proname = 'mark_unread'), '(missing)')
+
 ),
 -- A second value that is also accepted on a few ADVISORY rows only: what the live PressGO project showed when it was read on
--- 2026-10-20 (the copies of _notify and create_job running there are the repository's text without one inline "--" comment each).
--- Each value was reproduced locally from the repository text with just that comment removed. Required rows never get a second value.
+-- 2026-10-20 (the copy of create_job running there is the repository's text without one inline "--" comment).
+-- Each value was reproduced locally from the repository text with just that comment removed (2026-11: row 36 recomputed for the
+-- 55 functions after 0018, using the same method, which reproduced the earlier recorded values exactly). Required rows never get a second value.
 known_live(n, alt) as (values
-  (36, 'b1f514131b178b16448f359163fcf1bf'),
-  (38, '1b4b68aa6b0ee81fb5f2140619efee0b'),
+  (36, '92dcce0ab321a3370d217d9efb57d585'),
   (39, '4e47cf89f94561cf05e9fb87c211a07f')
 )
 select c.n, c.kind, c.check_name, c.expected, k.alt as also_accepted, c.actual,

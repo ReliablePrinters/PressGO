@@ -1,4 +1,4 @@
--- Rollback test, step 3 (after 0015-0017 are applied): put real data into everything the three migrations added,
+-- Rollback test, step 3 (after 0015-0018 are applied): put real data into everything the four migrations added,
 -- including one deleted job, so that the rollbacks are tried on a database that is in use, not an empty one.
 \set ON_ERROR_STOP on
 set search_path = pressgo, public;
@@ -27,8 +27,15 @@ select pg_temp.as_user('10000000-0000-0000-0000-0000000000a2');
 select create_job('70000000-0000-0000-0000-000000000001','Acme',null,'500 flyers',null,500,null,null,null,now()+interval '2 days','Normal',pg_temp.dept('Novelty'),'00000000-0000-0000-0000-0000000000a3',true);
 select create_job('70000000-0000-0000-0000-000000000002','Keeper',null,'cards',null,100,null,null,null,now()+interval '2 days','Normal',pg_temp.dept('Novelty'),null,true);
 select delete_job((select id from jobs where customer_name = 'Acme'), (select version from jobs where customer_name = 'Acme'), 'rollback test');
+-- 0018: a message, then a reply to it (which leaves an alert that carries the chat and message link)
+select pg_temp.as_user('10000000-0000-0000-0000-0000000000a3');
+select send_message((select id from conversations where name = 'General'), 'rollback test message') as q \gset
+select pg_temp.as_user('10000000-0000-0000-0000-0000000000a2');
+select send_message((select id from conversations where name = 'General'), 'rollback test reply', :'q');
 reset role;
 select pg_temp.expect_count($$select 1 from employee_avatars$$, 1, 'a picture is saved');
 select pg_temp.expect_count($$select 1 from employee_preferences$$, 1, 'a look is saved');
 select pg_temp.expect_count($$select 1 from jobs where deleted_at is not null$$, 1, 'one job is deleted');
+select pg_temp.expect_count($$select 1 from notifications where kind = 'reply' and conversation_id is not null and message_id is not null$$, 1, 'a reply alert with a message link is saved');
+select pg_temp.expect_count($$select 1 from messages where reply_to_id is not null$$, 1, 'a reply is saved');
 select 'SETUP DONE' as result;
