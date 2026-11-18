@@ -15,7 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { TEST_IDENTITY, assertSeparate, verifyBuilt } = require('./build-identity');
+const { TEST_IDENTITY, TEST_DESCRIPTION, assertSeparate, assertTestDescription, verifyBuilt } = require('./build-identity');
 
 const version = process.argv[2];
 if (!/^\d+\.\d+\.\d+$/.test(version || '')) { console.error('Give a version, for example: node try-build.js 1.1.0'); process.exit(1); }
@@ -24,9 +24,10 @@ const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'ut
 const cfg = JSON.parse(JSON.stringify(pkg.build));
 cfg.appId = 'com.reliableprinters.pressgo.test';
 cfg.productName = 'PressGO Test';
-cfg.extraMetadata = { version, pgAppId: 'com.reliableprinters.pressgo.test', ...TEST_IDENTITY };   // name + productName: own profile folder and update cache
-const prodIdentity = { name: pkg.name, productName: pkg.productName, appId: pkg.build.appId };
+cfg.extraMetadata = { version, pgAppId: 'com.reliableprinters.pressgo.test', ...TEST_IDENTITY, description: TEST_DESCRIPTION };   // name + productName: own profile folder and update cache; description: what Windows shows
+const prodIdentity = { name: pkg.name, productName: pkg.productName, appId: pkg.build.appId, description: pkg.description };
 assertSeparate(prodIdentity, { ...TEST_IDENTITY, appId: cfg.appId });                              // throws (and the build stops) if they could collide
+assertTestDescription(pkg.description, TEST_DESCRIPTION);                                          // throws if the test text is missing, equals production's, or claims the live site
 cfg.directories = { output: 'dist-test/' + version, buildResources: 'build' };
 cfg.files = [...cfg.files, 'test-override.json'];
 cfg.publish = [{ provider: 'generic', url: 'http://localhost:8099/' }];
