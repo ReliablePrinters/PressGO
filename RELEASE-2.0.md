@@ -1,7 +1,7 @@
 # PressGO 2.0: release notes and runbook
 
-**Status (prepared 2026-11-16): built and tested. NOT committed, NOT pushed, NOT merged, NOT deployed. No migration has been applied to the live database.**
-Everything below was developed and tested in an isolated Supabase test project and a throwaway local PostgreSQL. The live project (`nbkzejfoxyzvyfehhheo`) has only ever been read, and not at all during this release preparation.
+**Status (updated 2026-11-18): built and tested. The work up to commit `b67b251` is committed locally on `feature/pressgo-2.0`; the release-day changes in section 3 (version numbers, one test assertion and this file) are prepared separately. NOT pushed, NOT merged, NOT deployed. No migration has been applied to the live database.**
+Everything below was developed and tested in an isolated Supabase test project and a throwaway local PostgreSQL. No production database changes have been made as part of this PressGO 2.0 release preparation. The checks made on the live project (`nbkzejfoxyzvyfehhheo`) were read-only: plain SELECT statements, most recently on 2026-11-18 for a readable data export, a schema comparison and a file inventory.
 
 This release **includes pull request #3** (avatars, personal look, pasted pictures, safe job delete; migrations 0015-0017). The 2.0 work sits directly on top of that branch (`feature/pressgo-2.0` starts at PR #3's last commit `2b5a6e0`), so nothing is duplicated and nothing conflicts. `main` has not moved since (`241730a`).
 
@@ -38,11 +38,11 @@ Home is still the landing page. Nothing was removed.
 
 ## 3. Versions
 
-| Item | Now | Proposed for the release commit |
+| Item | Before the release commit | In the release commit |
 |---|---|---|
-| Web app (`docs/version.js`, shown in Settings > About) | `2.0.0`, build date `2026-11-16` (the day it was built) | `2.0.0`, with the **actual release date** |
-| Service worker (`docs/sw.js` `VERSION`) | `2026-10-20.1` (from PR #3) | a new value on release day, e.g. `2026-11-DD.1`. It names the cache, so people's old copy is replaced. Not changed earlier, so test builds do not churn it |
-| Windows app (`desktop/package.json`) | `1.1.1` | `1.2.0` (it must be higher than 1.1.1 or installed copies ignore it). The test build already uses 1.2.0 |
+| Web app (`docs/version.js`, shown in Settings > About) | `2.0.0`, build date `2026-11-16` (the day it was built) | `2.0.0`, build date `2026-11-18` (change it only if release day is a different day) |
+| Service worker (`docs/sw.js` `VERSION`) | `2026-10-20.1` (from PR #3) | `2026-11-18.1`, a new value. It names the cache, so people's old copy is replaced |
+| Windows app (`desktop/package.json`) | `1.1.1` | `1.2.0` (it must be higher than 1.1.1 or installed copies ignore it). One test that pinned 1.1.1 (`desktop/test/splash.test.js`) is updated to 1.2.0 in the same commit |
 | Test site | n/a | n/a |
 
 ## 4. Windows app test build (not the real installer)
@@ -71,8 +71,8 @@ Build it again any time: `cd desktop` then `node try-build.js 1.2.0 --url=http:/
 
 ## 6. Verification summary (at preparation time)
 
-- Front-end tests: 206 of 206 pass (`cd desktop`, `node --test`).
-- Database tests (local PostgreSQL 17.11): 24 of 24 pass, including the role tests for search, activity history and My work, the extended rollback test, and `verify_release.sql` (32 of 32 required, 16 of 16 advisory).
+- Front-end tests: 240 of 240 pass on Node 22, the version the build workflow uses (`cd desktop`, `node --test`). The count includes the tests that keep the separate PressGO Test build apart from the real one.
+- Database tests (local PostgreSQL 17.11): 24 of 24 pass, including the role tests for search, activity history and My work, the extended rollback test, and `verify_release.sql` (32 of 32 required, 16 of 16 advisory). Re-run on 2026-11-18 on a clean copy of the committed code. Each migration was also rehearsed alone and in the planned production order, checking row counts, what each person can see, the old app's calls and each rollback.
 - Real-browser checks of every stage as manager and as Front Desk (see the stage reports): all 16 screens load without errors; restricted jobs, chats and messages never appear.
 - Contrast: every screen and every accent was measured in light and dark (about 8,000 text checks, 0 failures).
 
@@ -82,18 +82,18 @@ Build it again any time: `cd desktop` then `node try-build.js 1.2.0 --url=http:/
 - The service worker could not be exercised in the test browser (the embedded preview refuses to register it); `sw.js` itself is unchanged apart from the version number proposed above.
 - Message search scans text without an index. It is instant at today's size; a database index would be needed if the message history grew into the hundreds of thousands.
 - The installer is unsigned (Windows shows "protected your PC" until a code-signing certificate is bought).
-- `desktop/package-lock.json` (created locally) is **not** part of the release; the build workflow uses `npm install` and pins exact Electron and builder versions in `package.json`.
+- `desktop/package-lock.json` (created locally) is **not** part of the release; the build workflow uses `npm install` and pins exact Electron and electron-builder versions in `package.json` (the updater library `electron-updater` floats within 6.x).
 
 ## 7. Exact release steps (each one waits for the owner's explicit approval)
 
 **Before anything:** the owner reviews this file and the diff.
 
-1. **Commit** (local only). On branch `feature/pressgo-2.0`, five commits, each with an explicit file list (never `git add .`):
+1. **Commit** (local only; items 1-4 below are the commits 3b2fdd7, 91e750c, f130133 and 25aeae0, followed by 984ca77, 27dd46d and b67b251 (updater message fix, test-build separation); item 5 is the release-day commit, which contains this file). On branch `feature/pressgo-2.0`, each commit has an explicit file list (never `git add .`):
    1. `supabase/`: migration 0018, rollback, tests, test runner and rollback-test changes, `verify_release.sql`, and `.gitignore` (adds `supabase/.temp/`).
    2. Web app: every `docs/*.js`, `docs/index.html`, `docs/style.css`, `docs/manifest.webmanifest` and the web tests in `desktop/test/`.
    3. Windows app: `desktop/main.js`, `notify.js`, `preload.js`, `try-build.js` and their tests.
    4. Documentation: `README.md`, `REBUILD.md`, `FEATURE-UPDATE-NOTES.md`, `SETUP.md`, `RELEASE-2.0.md`, `desktop/NOTIFICATIONS.md`, `desktop/UPDATES.md`.
-   5. (release day) Version numbers: `docs/sw.js`, `docs/version.js` build date, `desktop/package.json` to 1.2.0.
+   5. (release day) Version numbers: `docs/sw.js`, `docs/version.js` build date, `desktop/package.json` to 1.2.0, the version assertion in `desktop/test/splash.test.js`, and this file.
 2. **Push** the branch `feature/pressgo-2.0` as a **new** branch (it contains all of PR #3's commits). Nothing is merged.
 3. **Open a pull request** `feature/pressgo-2.0` into `main`, titled "PressGO 2.0 (includes PR #3)", marked do-not-merge until step 9. Review the diff on GitHub. PR #3 is left as it is; it closes by itself once its commits reach `main`.
 4. **Back up the live project** (REBUILD.md section 12.1, dashboard method; also download the `job-files` and `chat-files` buckets).

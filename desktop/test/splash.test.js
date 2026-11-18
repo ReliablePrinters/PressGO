@@ -212,7 +212,7 @@ test('wired into the app without disturbing it: the page stays in the window\'s 
   assert.ok(!/win\.loadURL\(APP_URL\);\n\}/.test(main), 'the app is loaded by the startup controller (so a retry is possible)');
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'desktop', 'package.json'), 'utf8'));
   assert.ok(pkg.build.files.includes('startup/**/*'), 'the splash, logo and font are packaged');
-  assert.strictEqual(pkg.version, '1.1.1', 'the installer\'s version number is not changed by this work');
+  assert.strictEqual(pkg.version, '1.2.0', 'the installer\'s version number is the release version');
   assert.ok(!/splash/i.test(fs.readFileSync(path.join(ROOT, 'desktop', 'preload.js'), 'utf8')), 'the page bridge is untouched');
   const idx = fs.readFileSync(path.join(ROOT, 'docs', 'index.html'), 'utf8');
   assert.ok(!/startup|splash/i.test(idx), 'the website is untouched');
