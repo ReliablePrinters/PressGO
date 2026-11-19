@@ -160,9 +160,16 @@
   let alertTab = null;
   const openGroups = new Set();      // which groups were left open, so a redraw (after marking one read) does not close them
   async function loadAlerts() {
-    let r = await sb.from('notifications').select('id,kind,title,job_id,conversation_id,message_id,created_at,read_at').order('created_at', { ascending: false }).limit(150);
-    // before the database update that adds the message link, the older columns still work (alerts then open the job as before)
-    if (r.error) r = await sb.from('notifications').select('id,kind,title,job_id,created_at,read_at').order('created_at', { ascending: false }).limit(150);
+    const q = (cols) => sb.from('notifications').select(cols).order('created_at', { ascending: false }).limit(150);
+    const OLD = 'id,kind,title,job_id,created_at,read_at';
+    // before the database update that adds the message link (0018) the older columns still work (alerts then open the job as before);
+    // once the page knows the update is missing it does not even ask for the new columns
+    if (window.pgCaps && !window.pgCaps.has('links')) return q(OLD);
+    let r = await q('id,kind,title,job_id,conversation_id,message_id,created_at,read_at');
+    if (r.error) {
+      if (window.pgCaps && window.pgCaps.isMissing(r.error)) window.pgCaps.markMissing('links');
+      r = await q(OLD);
+    }
     return r;
   }
   window.viewAlerts = async function (keepTab) {
@@ -219,6 +226,9 @@
   }
   function alertLive() {
     if (alertCh || !me) return;
+    // The live feed of alerts is switched on by database update 0018 (it adds the alerts table to the change feed). Without it a subscription could never
+    // deliver and would only keep retrying, so until then alerts arrive on the 30-second refresh below, exactly as in the previous version.
+    if (window.pgCaps && !window.pgCaps.has('links')) return;
     alertCh = sb.channel('alerts-me').on('postgres_changes', { event: 'INSERT', schema: 'pressgo', table: 'notifications', filter: 'employee_id=eq.' + me.id }, (p) => { try { onAlert(p.new); } catch (e) { /* an alert must never break the page */ } }).subscribe();
   }
   window.alertLeave = function () {

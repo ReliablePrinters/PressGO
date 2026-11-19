@@ -1,6 +1,6 @@
 # PressGO 2.0: release notes and runbook
 
-**Status (updated 2026-11-18): built and tested. The work up to commit `b67b251` is committed locally on `feature/pressgo-2.0`; the release-day changes in section 3 (version numbers, one test assertion and this file) are prepared separately. NOT pushed, NOT merged, NOT deployed. No migration has been applied to the live database.**
+**Status (updated 2026-11-19): built, tested and pushed on `feature/pressgo-2.0` (pull request #4, draft). NOT merged, NOT deployed. The web app now also runs correctly on the database as it is today (migration 0014), switching off only the features that need a missing update (see "Releasing before the migrations" in section 2). No migration has been applied to the live database.**
 Everything below was developed and tested in an isolated Supabase test project and a throwaway local PostgreSQL. No production database changes have been made as part of this PressGO 2.0 release preparation. The checks made on the live project (`nbkzejfoxyzvyfehhheo`) were read-only: plain SELECT statements, most recently on 2026-11-18 for a readable data export, a schema comparison and a file inventory.
 
 This release **includes pull request #3** (avatars, personal look, pasted pictures, safe job delete; migrations 0015-0017). The 2.0 work sits directly on top of that branch (`feature/pressgo-2.0` starts at PR #3's last commit `2b5a6e0`), so nothing is duplicated and nothing conflicts. `main` has not moved since (`241730a`).
@@ -30,18 +30,34 @@ Home is still the landing page. Nothing was removed.
 | `0017_delete_job.sql` | `jobs.deleted_at/deleted_by/delete_reason`, `delete_job()`, trigger `jobs_frozen`; replaces `can_view_job()` and `check_job_assignee()` | `jobs`, 0008's `can_view_job` | Yes | `rollbacks/0017_rollback.sql` (refuses while any job is deleted; restore them first) |
 | `0018_message_links_replies.sql` | `notifications.conversation_id/message_id`; `mark_unread()`; replaces `_notify`, `approve_picture`, `send_message`, `send_attachment` (the old 6-argument call still works); adds `notifications` to the `supabase_realtime` publication (guarded) | 0005-0007, 0009, 0011 | Yes (the old six-argument `send_attachment` call still works and is tested) | `rollbacks/0018_rollback.sql` |
 
-- **Order and safety.** Apply in this order, each once. Every file is additive or `create or replace`; none deletes data. **Apply them before publishing the new web app** (the new screens call the new functions). The old web app keeps working with the migrated database.
+- **Order and safety.** Apply in this order, each once. Every file is additive or `create or replace`; none deletes data. **Apply them before publishing the new web app if you want every feature on day one** (the new screens call the new functions); the web app can also be published first (next subsection). The old web app keeps working with the migrated database.
 - **Counts after 0001-0018** (a clean local build): 19 tables, 31 policies, 21 triggers, 55 functions, 0 tables without row security. `supabase/checks/verify_release.sql` (read-only): **32 required rows** must all be `true`; 16 advisory rows are fingerprints (on the live project, `_notify` and `create_job` carried a comment-only difference before 0018; after 0018 only `create_job` still shows it, and that is accepted on its rows).
 - **Rollbacks are tested with data**: the rollback test applies 0015-0018 to a database containing a picture, a saved look, a deleted job, a reply and a reply alert, then undoes them in the order 0018, 0017, 0016, 0015 and proves the structure is identical to before 0015. It also proves the 0017 undo refuses while a job is deleted, including under a concurrent delete.
 - **The live project.** `supabase/.temp/linked-project.json` and `docs/config.js` both name project `nbkzejfoxyzvyfehhheo`. The test project is `hfaeupaioacstfkqvfvo`. A second, paused project (`fcmkichfgbrflvnmjgba`) must never be touched. **Confirm the project name/ref in the dashboard URL before every live step.**
 - Never use the Supabase CLI here: `supabase/.temp` links it to the live project. (`supabase/.temp/` is listed in `.gitignore` so it cannot be committed.)
 
+### Releasing before the migrations (compatibility mode)
+
+The web app checks once after sign-in which database updates exist (`docs/caps.js`: it reads zero rows of one column per update; nothing is changed) and switches off only what needs a missing update. Publishing it changes no database: the backup and the pre-check (steps 4 and 5 below) belong to the moment the migrations are applied, not to the web release.
+
+| Feature | Needs | With the database at 0014 (live today) | After the update is applied |
+|---|---|---|---|
+| Profile picture | 0015 | Settings > Profile says it is not available yet; initials everywhere | picture editor and pictures appear |
+| Saved look (light/dark, accent colour) | 0016 | Settings > Appearance says it is not available yet; PressGO keeps following the computer | controls appear, saved to the account |
+| Delete job | 0017 | the Delete job button is not shown | button appears |
+| Mark as unread, a picture sent as a reply, alerts that open the exact message | 0018 | not offered; alerts open the job as before | offered |
+
+Everything else behaves the same at 0014: jobs, chat, text replies (`send_message` has accepted a reply since 0005; only the "someone replied to you" alert needs 0018), search, My work, Activity, shortcuts, notifications and the Windows app. Until 0018 puts alerts on the live feed, new alerts show up on the 30-second refresh instead of at once.
+After the migrations are applied, people get the features on their next page load: no new release is needed.
+
+Tested: `desktop/test/caps.test.js` and `desktop/test/compat-0014-web.test.js` (28 tests: the real browser code against a 0014-like and a fully migrated database, plus a scan that fails if the web code ever uses something newer than 0014 without a gate) and `supabase/tests/compat_0014_test.sql` (a database built from 0001-0014 only, and a fully migrated one). **Not verified: a run against the real Supabase project** (nothing was sent to it for this). The first sign-in after publishing is that check: hard-refresh, then Settings > Profile and Settings > Appearance should say "not available yet", and a job, a chat message and Alerts should work as before. If a check is inconclusive the feature stays visible and its call is guarded, so the worst case is the same error message as before, never a "saved" message for something that was not saved. To undo the web release, revert the merge.
+
 ## 3. Versions
 
 | Item | Before the release commit | In the release commit |
 |---|---|---|
-| Web app (`docs/version.js`, shown in Settings > About) | `2.0.0`, build date `2026-11-16` (the day it was built) | `2.0.0`, build date `2026-11-18` (change it only if release day is a different day) |
-| Service worker (`docs/sw.js` `VERSION`) | `2026-10-20.1` (from PR #3) | `2026-11-18.1`, a new value. It names the cache, so people's old copy is replaced |
+| Web app (`docs/version.js`, shown in Settings > About) | `2.0.0`, build date `2026-11-16` (the day it was built) | `2.0.0`, build date `2026-11-19` (change it only if release day is a different day) |
+| Service worker (`docs/sw.js` `VERSION`) | `2026-10-20.1` (from PR #3) | `2026-11-19.1`, a new value. It names the cache, so people's old copy is replaced |
 | Windows app (`desktop/package.json`) | `1.1.1` | `1.2.0` (it must be higher than 1.1.1 or installed copies ignore it). One test that pinned 1.1.1 (`desktop/test/splash.test.js`) is updated to 1.2.0 in the same commit |
 | Test site | n/a | n/a |
 
@@ -71,8 +87,8 @@ Build it again any time: `cd desktop` then `node try-build.js 1.2.0 --url=http:/
 
 ## 6. Verification summary (at preparation time)
 
-- Front-end tests: 240 of 240 pass on Node 22, the version the build workflow uses (`cd desktop`, `node --test`). The count includes the tests that keep the separate PressGO Test build apart from the real one.
-- Database tests (local PostgreSQL 17.11): 24 of 24 pass, including the role tests for search, activity history and My work, the extended rollback test, and `verify_release.sql` (32 of 32 required, 16 of 16 advisory). Re-run on 2026-11-18 on a clean copy of the committed code. Each migration was also rehearsed alone and in the planned production order, checking row counts, what each person can see, the old app's calls and each rollback.
+- Front-end tests: 268 of 268 pass on Node 22, the version the build workflow uses (`cd desktop`, `node --test`). The count includes the tests that keep the separate PressGO Test build apart from the real one.
+- Database tests (local PostgreSQL 17.11): 26 of 26 pass (including the new compatibility test on a database at 0014 and on a fully migrated one), including the role tests for search, activity history and My work, the extended rollback test, and `verify_release.sql` (32 of 32 required, 16 of 16 advisory). Re-run on 2026-11-18 on a clean copy of the committed code. Each migration was also rehearsed alone and in the planned production order, checking row counts, what each person can see, the old app's calls and each rollback.
 - Real-browser checks of every stage as manager and as Front Desk (see the stage reports): all 16 screens load without errors; restricted jobs, chats and messages never appear.
 - Contrast: every screen and every accent was measured in light and dark (about 8,000 text checks, 0 failures).
 
@@ -106,3 +122,4 @@ Build it again any time: `cd desktop` then `node try-build.js 1.2.0 --url=http:/
 11. **Windows app:** GitHub > Actions > "Build Windows desktop app": first a **dry run** (publish unticked), then, if green, publish `v1.2.0` and write a one-sentence description (UPDATES.md). Installed copies then show the Update button. Test the real installer once.
 12. **If something is wrong:** revert the merge first (the old web app works with the migrated database), then, only if needed, run the rollback files in the order 0018, 0017, 0016, 0015.
 13. **Afterwards:** decide Suggestions (2.1) and the optional rename.
+14. **If the migrations are applied after the web release** (see "Releasing before the migrations"): do steps 4 to 6 on that day (backup, pre-check, then 0015, 0016, 0017, 0018 one at a time with `verify_release.sql` at the end), then hard-refresh: the features in the table appear. Step 7 does not apply (the new web app is already live); check the four features instead.

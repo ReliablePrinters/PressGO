@@ -265,7 +265,10 @@
     const q = L.quoteInfo(m.reply);
     return `<button type="button" class="quote${q.gone ? ' gone' : ''}"${q.gone || !q.id ? ' disabled' : ` data-jump="${esc(q.id)}"`} aria-label="${q.gone ? 'The message this replies to is not available' : 'Go to the message this replies to'}"><b>${esc(q.who || 'Message')}</b><span>${esc(q.preview)}</span></button>`;
   };
-  const actsHtml = (m) => (m.hidden_at ? '' : `<span class="acts"><button type="button" data-reply="${m.id}" title="Reply" aria-label="Reply to this message"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 6 6v3"/></svg>Reply</button>${m.author_id !== me.id ? `<button type="button" data-unread-from="${m.id}" title="Mark as unread from here" aria-label="Mark as unread from this message">Mark unread</button>` : ''}</span>`);
+  // Replying with TEXT already works with the older database (send_message has taken a reply since the start). What needs database update 0018 is
+  // replying with a PICTURE and "Mark as unread": until it is applied those two are not offered (see caps.js); afterwards they appear by themselves.
+  const capOn = (name) => !window.pgCaps || window.pgCaps.has(name);
+  const actsHtml = (m) => (m.hidden_at ? '' : `<span class="acts"><button type="button" data-reply="${m.id}" title="Reply" aria-label="Reply to this message"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 6 6v3"/></svg>Reply</button>${m.author_id !== me.id && capOn('links') ? `<button type="button" data-unread-from="${m.id}" title="Mark as unread from here" aria-label="Mark as unread from this message">Mark unread</button>` : ''}</span>`);
   // scroll a message into the middle of the screen and flash it so it is easy to spot
   let lastFlash = null;
   function flash(el) {
@@ -414,7 +417,7 @@
       : info.type === 'job' ? 'Everyone working on this job'
       : info.type === 'department' ? 'Department channel — this department and managers' : info.type === 'urgent' ? 'Urgent updates for everyone' : 'Everyone at PressGO';
     const who = info.type === 'direct' ? `<span class="pstat" data-n="${esc(info.name)}"></span>` : `<span class="pstat on" id="onl"></span>`;
-    main.innerHTML = `<div class="thread"><div class="th-head"><div class="th-l"><div class="ttl">${info.type === 'direct' ? avatar(info.name, 34) : `<span class="th-ic">${isChan ? '#' : window.pgIcon('jobs')}</span>`}<span class="tt">${esc(info.name || '')}</span></div><div class="sub">${sub} · ${who}</div></div><div class="th-r"><button type="button" class="sm" id="mkun" title="Mark this chat as unread and go back to the list">Mark as unread</button>${info.type === 'job' && info.job_id ? `<a class="th-job" href="#/job/${info.job_id}">${window.pgIcon('jobs')} Open job</a>` : ''}</div></div>
+    main.innerHTML = `<div class="thread"><div class="th-head"><div class="th-l"><div class="ttl">${info.type === 'direct' ? avatar(info.name, 34) : `<span class="th-ic">${isChan ? '#' : window.pgIcon('jobs')}</span>`}<span class="tt">${esc(info.name || '')}</span></div><div class="sub">${sub} · ${who}</div></div><div class="th-r">${capOn('links') ? '<button type="button" class="sm" id="mkun" title="Mark this chat as unread and go back to the list">Mark as unread</button>' : ''}${info.type === 'job' && info.job_id ? `<a class="th-job" href="#/job/${info.job_id}">${window.pgIcon('jobs')} Open job</a>` : ''}</div></div>
       <div class="msgs" id="msgs"><div class="msk" aria-busy="true" aria-label="Loading messages"><i></i><i></i><i></i></div></div>
       <div class="typing" id="typing" hidden></div>
       <div class="pend" id="pend" hidden></div>
@@ -440,8 +443,10 @@
       ta.placeholder = 'Write your reply';
       ta.focus();
     };
-    document.getElementById('mkun').onclick = async () => {
-      try { await call('mark_unread', { p_conv: conv }); window.pgToast('Marked as unread.'); location.hash = '#/chat'; window.chatSidebar(); } catch (e) { window.pgToast(friendly(e), 'error'); }
+    const mkun = document.getElementById('mkun');   // not there until database update 0018 is applied
+    if (mkun) mkun.onclick = async () => {
+      try { await call('mark_unread', { p_conv: conv }); window.pgToast('Marked as unread.'); location.hash = '#/chat'; window.chatSidebar(); }
+      catch (e) { if (window.pgCaps && window.pgCaps.isMissing(e)) window.pgCaps.markMissing('links'); window.pgToast(friendly(e), 'error'); }
     };
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
     ta.onkeydown = (e) => {
@@ -467,7 +472,7 @@
       const uf = e.target.closest('[data-unread-from]');
       if (uf) {
         try { await call('mark_unread', { p_conv: conv, p_msg: uf.dataset.unreadFrom }); window.pgToast('Marked as unread from that message.'); location.hash = '#/chat'; window.chatSidebar(); }
-        catch (err) { window.pgToast(friendly(err), 'error'); }
+        catch (err) { if (window.pgCaps && window.pgCaps.isMissing(err)) window.pgCaps.markMissing('links'); window.pgToast(friendly(err), 'error'); }
         return;
       }
       const ap = e.target.closest('[data-appr],[data-unappr]');
@@ -532,6 +537,8 @@
       e.preventDefault();
       const text = ta.value;
       if (!text.trim() && !pending) return;
+      // a picture sent as a reply needs database update 0018: say so BEFORE anything is uploaded, and keep the text, the picture and the reply as they are
+      if (pending && replyTo && !capOn('links')) { window.pgToast('A picture cannot be sent as a reply yet. Send it on its own, or cancel the reply.', 'error'); return; }
       const btn = f.querySelector('button.primary'); btn.disabled = true;
       try {
         if (pending) {
@@ -545,7 +552,11 @@
           URL.revokeObjectURL(pending.preview); pending = null; showPend();
         } else await call('send_message', { p_conv: conv, p_body: text, ...(replyTo ? { p_reply: replyTo.id } : {}) });
         ta.value = ''; ta.style.height = '44px'; setReply(null); await loadThread(conv); window.chatSidebar();
-      } catch (err) { window.pgToast(friendly(err), 'error'); }
+      } catch (err) {
+        // a picture reply needs database update 0018: if it is not there, say so, drop the reply, keep what was typed and do NOT claim anything was sent
+        if (window.pgCaps && window.pgCaps.isMissing(err) && pending && replyTo) { window.pgCaps.markMissing('links'); setReply(null); }
+        window.pgToast(friendly(err), 'error');
+      }
       btn.disabled = false;
       ta.focus();
     };

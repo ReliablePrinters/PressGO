@@ -50,7 +50,9 @@
 
   async function loadAvatars() {
     if (typeof me === 'undefined' || !me) return;
+    if (root.pgCaps && !root.pgCaps.has('avatars')) return;                // database update 0015 is not applied yet: initials only, and no requests that would fail
     const { data, error } = await sb.from('employee_avatars').select('employee_id,avatar_path,emp:employee_id(display_name)');
+    if (error && root.pgCaps && root.pgCaps.isMissing(error)) root.pgCaps.markMissing('avatars');
     if (error || !data || !me) return;                                     // keep what is on screen
     const now = Date.now();
     const need = data.map((r) => r.avatar_path).filter((p) => !(store.urls.get(p) && store.urls.get(p).exp > now));
@@ -70,7 +72,9 @@
   }
 
   async function loadPrefs() {
+    if (root.pgCaps && !root.pgCaps.has('prefs')) return;                  // database update 0016 is not applied yet: the normal look
     const { data, error } = await sb.from('employee_preferences').select('theme,accent').maybeSingle();
+    if (error && root.pgCaps && root.pgCaps.isMissing(error)) root.pgCaps.markMissing('prefs');
     if (error) return;                                                      // keep the look from this browser
     const p = root.pgPrefs.apply(data);
     root.pgPrefs.remember(p);
@@ -107,6 +111,11 @@
 
   // The picture editor on Settings > Profile. Choosing a picture shows a preview; nothing is stored until "Save picture".
   function mountPicture(host) {
+    // Profile pictures need database update 0015. Until it is applied there is nothing to edit: say so, and offer nothing that would fail.
+    if (root.pgCaps && !root.pgCaps.has('avatars')) {
+      host.innerHTML = `<p class="note" role="status">${esc(root.pgCaps.unavailable('avatars'))}</p>`;
+      return;
+    }
     let pending = null, previewUrl = null, removing = false, busy = false;
     const hasPic = () => !!root.pgAvatarUrl(me.display_name);
     const drop = () => { if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; } };
@@ -160,7 +169,11 @@
         await loadAvatars();
         if (window.chatSidebar) window.chatSidebar();
         reset(); toast('Picture saved.');
-      } catch (err) { note('Your picture was not saved: ' + friendly(err), true); toast('Your picture was not saved: ' + friendly(err), 'error'); }
+      } catch (err) {
+        // the picture bucket or functions are not there (update 0015 not applied): remember it and replace the editor by the explanation; nothing was saved
+        if (root.pgCaps && root.pgCaps.isMissing(err)) { root.pgCaps.markMissing('avatars'); mountPicture(host); toast('Your picture was not saved: ' + friendly(err), 'error'); return; }
+        note('Your picture was not saved: ' + friendly(err), true); toast('Your picture was not saved: ' + friendly(err), 'error');
+      }
       busy = false; $('#pfgo').disabled = false;
     });
   }

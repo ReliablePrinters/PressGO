@@ -16,7 +16,9 @@ const isLate = (j) => !isClosed(j) && j.lifecycle_status !== 'Ready for Collecti
 const canCreate = () => me && (me.manager_role || me.front_desk);
 // Artwork approval (Approved for Print): Front Desk, Manager (admin) only. The database enforces the same rule in approve_artwork().
 const canApproveArtwork = () => !!me && (me.manager_role === true || me.front_desk === true);
-const friendly = (e) => (e && e.message ? e.message : String(e)).replace(/^.*?ERROR:\s*/, '');
+// A feature that needs a database update which has not been applied yet (see caps.js) is reported in plain words, never with the database's own error text.
+const friendly = (e) => (window.pgCaps && window.pgCaps.isMissing(e) ? window.pgCaps.GENERIC : (e && e.message ? e.message : String(e)).replace(/^.*?ERROR:\s*/, ''));
+const cap = (name) => !window.pgCaps || window.pgCaps.has(name);   // is this 2.0 feature available with the database that is there?
 
 // ---------------------------------------------------------------- look-and-feel helpers (markup only, no data logic)
 const ICONS = {
@@ -136,6 +138,8 @@ async function loadMe(session) {
   const { data: mem } = await sb.from('department_memberships').select('department_id').eq('employee_id', emp.id).is('ended_at', null);
   myDepts = new Set((mem || []).map((m) => m.department_id));
   window.onhashchange = route;
+  // find out which 2.0 features the database can do yet (reads zero rows, changes nothing; never waits longer than a few seconds)
+  if (window.pgCaps) await window.pgCaps.start(sb, 3500);
   if (window.pgProfile) window.pgProfile.init();   // this person's saved look and everyone's profile pictures
   route();
 }
@@ -187,7 +191,7 @@ function shell(active, inner) {
   if (window.alertBadge) window.alertBadge();
   document.getElementById('set').onclick = () => { location.hash = '#/settings'; };
   for (const id of ['gsb', 'gsm']) document.getElementById(id).onclick = () => { box.classList.remove('nav-open'); if (window.pgSearch) window.pgSearch.open(); };
-  document.getElementById('so').onclick = async () => { await sb.auth.signOut(); me = null; if (window.alertLeave) window.alertLeave(); if (window.pgProfile) window.pgProfile.reset(); showLogin(); };
+  document.getElementById('so').onclick = async () => { await sb.auth.signOut(); me = null; if (window.alertLeave) window.alertLeave(); if (window.pgProfile) window.pgProfile.reset(); if (window.pgCaps) window.pgCaps.reset(); showLogin(); };
 }
 function route() {
   const h = location.hash || '#/home';
@@ -399,7 +403,7 @@ async function viewJob(id) {
         ${mgr && !isClosed(j) ? '<button id="cnl" class="danger">Cancel job</button>' : ''}
         ${mgr && idx > 0 && !isClosed(j) ? '<button id="back">Move back…</button>' : ''}
         ${mgr && isClosed(j) ? '<button id="reopen">Reopen…</button>' : ''}
-        ${canDelete ? '<button id="deljob" class="danger">Delete job…</button>' : ''}</div></div>
+        ${canDelete && cap('deleteJob') ? '<button id="deljob" class="danger">Delete job…</button>' : ''}</div></div>
     <div id="j3">
     ${pending ? `<div class="card notice"><h3 style="margin-top:0">Handoff waiting</h3>
       <p>${esc(pending.sender?.display_name || 'Someone')} sent this job from <b>${esc(deptName(pending.from_department_id))}</b> to <b>${esc(deptName(pending.to_department_id))}</b>: <i>${esc(pending.note)}</i></p>
@@ -469,6 +473,7 @@ async function viewJob(id) {
         toast(`Job #${j.job_number} was deleted.`);
         location.hash = '#/jobs';
       } catch (err) {
+        if (window.pgCaps && window.pgCaps.isMissing(err)) window.pgCaps.markMissing('deleteJob');   // the update is not there yet: the button goes away, the job is untouched
         const m = friendly(err);
         document.getElementById('je').textContent = err.code === '40001' || /version conflict/.test(m) ? 'Someone else just changed this job. It has been refreshed — please check and try again.' : m;
         if (err.code === '40001' || /version conflict/.test(m)) setTimeout(() => viewJob(id), 1500);
@@ -574,5 +579,5 @@ async function viewJob(id) {
   };
 }
 
-sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; if (window.pgProfile) window.pgProfile.reset(); } });
+sb.auth.onAuthStateChange((ev) => { if (ev === 'SIGNED_OUT') { me = null; if (window.pgProfile) window.pgProfile.reset(); if (window.pgCaps) window.pgCaps.reset(); } });
 start();

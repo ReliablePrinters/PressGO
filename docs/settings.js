@@ -87,6 +87,11 @@
 
     // ---------- Appearance: light / dark / follow the computer, and the accent colour (saved to your account) ----------
     appearance(el) {
+      // Saving a look needs database update 0016. Until it is applied there is nothing that could be saved: explain instead of offering controls that would fail.
+      if (root.pgCaps && !root.pgCaps.has('prefs')) {
+        el.innerHTML = `<div class="fgroup"><h4>Appearance</h4><p class="note" role="status">${esc(root.pgCaps.unavailable('prefs'))} PressGO keeps following your computer's light or dark setting.</p></div>`;
+        return;
+      }
       const P = root.pgPrefs;
       let saved = P.get();
       const scheme = document.documentElement.getAttribute('data-scheme') === 'dark' ? 'dark' : 'light';
@@ -109,6 +114,7 @@
           hint.style.color = ''; hint.textContent = 'Saved.'; setTimeout(() => { if (hint.textContent === 'Saved.') hint.textContent = idle; }, 2500);
         } catch (ex) {
           P.apply(saved);                                                    // not stored: go back to what is saved
+          if (root.pgCaps && root.pgCaps.isMissing(ex)) root.pgCaps.markMissing('prefs');   // update 0016 is not there: the controls are replaced by the explanation on the next visit
           el.querySelectorAll(`input[name="${t.name}"]`).forEach((r) => { r.checked = r.value === saved[t.name]; });
           hint.style.color = 'var(--bad)'; hint.textContent = 'Your look was not saved: ' + friendly(ex);
         }

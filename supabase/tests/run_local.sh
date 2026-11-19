@@ -88,6 +88,16 @@ if newdb "$db" && migrate "$db" '^001[5678]_' \
 else bad "rollback test (could not set up)" "$out"; fi
 echo
 
+echo "Compatibility test (the live database is at migration 0014: the 2.0 web app must work with it AND with the fully migrated database)"
+for mode in 0 1; do
+  db="t_compat$mode"; skip='^$'; label="database built from all 18 migrations"
+  if [ "$mode" = 0 ]; then skip='^001[5678]_'; label="database at migration 0014 (0001-0014 only)"; fi
+  if newdb "$db" && migrate "$db" "$skip" && "${P[@]}" -d "$db" -v migrated="$mode" -f "$DIR/compat_0014_test.sql" >"$LOG/compat$mode.out" 2>&1 && grep -q "PASSED: web compatibility" "$LOG/compat$mode.out"; then
+    ok "web compatibility, $label"
+  else bad "web compatibility, $label" "$LOG/compat$mode.out"; fi
+done
+echo
+
 echo "Concurrency test (the 0017 rollback starts while another session is still in the middle of deleting a job)"
 db="t_race"
 if newdb "$db" && migrate "$db" && "${P[@]}" -d "$db" -f "$DIR/rollback/race_setup.sql" >"$LOG/race_setup.out" 2>&1; then
