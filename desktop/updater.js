@@ -90,6 +90,10 @@ function createUpdater(deps) {
 
   function onError(err) {
     log('update error', err && err.message);
+    // electron-updater reports ONE failure TWICE: it emits 'error' and then the same call rejects. The first report is the meaningful
+    // one and has already put the message on screen, so a repeat while that message is showing must not overwrite it (it used to
+    // reset the screen to "Update available" with no message). A new attempt starts from 'checking', so it can still report its own result.
+    if (state.status === 'error') { log('repeat error report ignored'); return; }
     if (state.status === 'downloading') {
       set({ status: 'error', message: friendlyError(err), percent: 0 });
     } else if (manual) {

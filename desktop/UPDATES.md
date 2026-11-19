@@ -63,6 +63,8 @@ for updates in a local folder instead of GitHub. Build version 1.1.0 and 1.1.1 w
 `node try-serve.js 1.1.1`, then open PressGO Test. The Update PressGO button should appear on the sign-in screen.
 `node try-serve.js 1.1.1 --tamper` offers the same update with a deliberately broken checksum, which must be rejected.
 
+**Which database does a test build talk to?** By default the test app opens `http://localhost:8081/`, which `try-serve.js` serves from `../docs`, and `docs/config.js` points at the **LIVE** database, so signing in with that build uses live data. To test against an isolated test project, serve a copy of the site whose `config.js` points at that project and build with `node try-build.js 1.2.0 --url=http://127.0.0.1:8082/` (only a local address is accepted).
+
 ## Picture preview
 Pictures open in an in-app viewer (`pgViewImage` in `docs/chat.js`), used by chat pictures and image files on a job.
 The desktop app sends every new browser window to your normal browser, which is why pictures wrapped in

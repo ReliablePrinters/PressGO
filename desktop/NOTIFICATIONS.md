@@ -19,10 +19,11 @@ A closed app has no connection, so it cannot know a message arrived. Nothing is 
 - Messages arriving within 2 seconds become one notification ("5 new messages from Bob"). A flood across more than
   3 chats becomes one summary. The desktop app also refuses more than 5 pop-ups in 10 seconds.
 - `desktop/notify.js` shows the native Windows notification. Clicking it restores PressGO if minimized, brings it
-  to the front and opens that conversation.
-- Settings (per person, per computer): **Private messages and Urgent** (default), **All chats**, **Off**, and
-  **Show the message text** on/off (off shows only the sender). Open it with the **Notifications** button at the
-  bottom of the left menu. The same dialog has a **Send a test notification** button.
+  to the front and opens that conversation (PressGO 2.0: the exact message, or the job, for alerts). The taskbar button also flashes until you look.
+- Settings (per person, per computer): **All chats** (default), **Private messages and Urgent**, **Off**, and
+  **Show the message text** on/off (off shows only the sender). Open it with the **Settings > Notifications**
+  page (PressGO 2.0; before that it was a button at the bottom of the left menu). The same page has a **Send a test notification** button, a
+  sound setting, in-app banners and a switch for each kind of alert.
 - No keys or secrets are involved, no database or server change was made, and nothing is sent anywhere new.
 
 ## Windows settings

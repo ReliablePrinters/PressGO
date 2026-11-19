@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PressGO</title>
+<!-- Everything here is local: no network request, no library. The one font (Inter) is bundled in fonts/. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'self'; font-src 'self'; script-src 'self'; connect-src 'none'">
+<link rel="stylesheet" href="splash.css">
+</head>
+<body>
+<!-- Only used by the browser preview (?demo=1): a stand-in for the app, so the hand-over can be seen -->
+  <div id="appbeneath" aria-hidden="true" hidden><div class="pv-side"></div><div class="pv-main"><span>The PressGO dashboard appears here (stand-in for this preview; in the app it is the real one)</span></div></div>
+<div id="root" class="play" data-state="starting">
+
+  <main class="stage" aria-label="PressGO is starting">
+    <svg class="scene" viewBox="0 0 960 545" preserveAspectRatio="xMidYMid meet" role="img" aria-label="A printer printing the PressGO and Reliable Printers and Stationery logos">
+      <defs>
+        <clipPath id="emerge"><rect x="0" y="184" width="960" height="361"/></clipPath>
+        <clipPath id="sheetClip"><rect x="290" y="190" width="380" height="336" rx="6"/></clipPath>
+      </defs>
+
+      <!-- the printer: it draws itself, its rollers turn, its carriage crosses once -->
+      <g id="printer">
+        <polygon class="tray" points="320,56 340,28 620,28 640,56" pathLength="1"/>
+        <rect class="trayPaper" x="352" y="22" width="256" height="12" rx="2"/>
+        <rect class="body" x="250" y="56" width="460" height="146" rx="24" pathLength="1"/>
+        <rect class="display" x="282" y="80" width="96" height="16" rx="4"/>
+        <line class="tick" x1="292" y1="88" x2="306" y2="88"/><line class="tick" x1="316" y1="88" x2="330" y2="88"/><line class="tick" x1="340" y1="88" x2="354" y2="88"/>
+        <line class="rail" x1="290" y1="126" x2="670" y2="126"/>
+        <g class="carriageWrap"><rect class="carriage" x="290" y="114" width="46" height="24" rx="6"/></g>
+        <circle class="led" cx="676" cy="88" r="5"/>
+        <rect class="slot" x="300" y="170" width="360" height="14" rx="7"/>
+        <line class="slotGlow" x1="312" y1="187" x2="648" y2="187"/>
+        <g class="roller" transform="translate(292 178)"><circle class="rollerBody" r="12"/><g class="spin"><circle class="rollerRing" r="8"/></g></g>
+        <g class="roller" transform="translate(668 178)"><circle class="rollerBody" r="12"/><g class="spin rev"><circle class="rollerRing" r="8"/></g></g>
+      </g>
+
+      <!-- the sheet slides out of the slot (it is only visible below the slot line) -->
+      <g clip-path="url(#emerge)">
+        <g id="sheet">
+          <rect class="shadow2" x="290" y="202" width="380" height="336" rx="6"/>
+          <rect class="shadow1" x="290" y="196" width="380" height="336" rx="6"/>
+          <rect class="paper" x="290" y="190" width="380" height="336" rx="6"/>
+
+          <!-- registration marks: they appear while the sheet is printed, then go -->
+          <g class="marks" aria-hidden="true">
+            <g transform="translate(314 214)"><circle r="7"/><line x1="-12" x2="12"/><line y1="-12" y2="12"/></g>
+            <g transform="translate(646 214)"><circle r="7"/><line x1="-12" x2="12"/><line y1="-12" y2="12"/></g>
+            <g transform="translate(314 502)"><circle r="7"/><line x1="-12" x2="12"/><line y1="-12" y2="12"/></g>
+            <g transform="translate(646 502)"><circle r="7"/><line x1="-12" x2="12"/><line y1="-12" y2="12"/></g>
+          </g>
+
+          <!-- the PressGO wordmark, as the app draws it everywhere: Press + GO. It is printed left to right. -->
+          <g id="wordmark">
+            <text class="echo" x="480" y="316" text-anchor="middle">Press<tspan>GO</tspan></text>
+            <text class="word" x="480" y="316" text-anchor="middle"><tspan class="p">Press</tspan><tspan class="g">GO</tspan></text>
+            <g clip-path="url(#sheetClip)"><g class="reveal">
+              <rect class="cover" x="296" y="238" width="372" height="100"/>
+              <rect class="head" x="292" y="232" width="4" height="112" rx="2"/>
+            </g></g>
+          </g>
+
+          <!-- the real Reliable Printers & Stationery logo, pressed onto the sheet -->
+          <g id="stamp">
+            <circle class="impress" cx="480" cy="436" r="64"/>
+            <ellipse class="stampShadow" cx="480" cy="498" rx="52" ry="7"/>
+            <image href="assets/logo.png" x="416" y="372" width="128" height="128" aria-label="Reliable Printers &amp; Stationery Ltd."/>
+          </g>
+        </g>
+      </g>
+    </svg>
+
+    <!-- the calm part: what is happening, in words. Real text, so it stays sharp and readable at any scale. -->
+    <section class="status" aria-live="polite">
+      <p class="title" id="title">Starting PressGO</p>
+      <p class="body" id="body"></p>
+      <div class="bar" aria-hidden="true"><i></i></div>
+      <div class="actions" id="actions" hidden>
+        <button type="button" id="retry" class="primary">Try again</button>
+        <button type="button" id="quit" class="ghost" hidden>Quit</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="demo" class="demo" hidden>
+    <b>Preview controls</b>
+    <button type="button" data-do="replay">Replay</button>
+    <button type="button" data-do="ready">App ready now</button>
+    <button type="button" data-do="slow">Slow start</button>
+    <button type="button" data-do="offline">Go offline</button>
+    <button type="button" data-do="fail">App fails</button>
+    <button type="button" data-do="reduced">Reduce motion</button>
+    <button type="button" data-do="beneath">App underneath</button>
+    <button type="button" data-do="theme" aria-pressed="false">App theme: light</button>
+    <span id="demoNote" role="status"></span>
+  </div>
+</div>
+<script src="splashlogic.js"></script>
+<script src="splash.js"></script>
+</body>
+</html>
